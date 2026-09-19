@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Policy - Music Sync</title>
+  <style>
+    :root {
+      --bg: #09090b;
+      --card: #18181b;
+      --border: #27272a;
+      --text: #f4f4f5;
+      --muted: #a1a1aa;
+      --accent: #facc15;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      margin: 0;
+      padding: 2rem 1rem;
+    }
+    .container {
+      max-width: 780px;
+      margin: 0 auto;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 2.5rem;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    }
+    h1 {
+      color: var(--accent);
+      margin-top: 0;
+      font-size: 1.85rem;
+    }
+    h2 {
+      color: var(--text);
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 0.5rem;
+      margin-top: 2rem;
+      font-size: 1.25rem;
+    }
+    p, li {
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 1.5rem 0;
+      font-size: 0.9rem;
+    }
+    th, td {
+      border: 1px solid var(--border);
+      padding: 0.65rem 0.85rem;
+      text-align: left;
+    }
+    th {
+      background: #202024;
+      color: var(--accent);
+    }
+    td {
+      color: var(--muted);
+    }
+    code {
+      background: #27272a;
+      color: var(--accent);
+      padding: 0.15rem 0.35rem;
+      border-radius: 4px;
+      font-size: 0.85rem;
+    }
+    .date {
+      color: var(--muted);
+      font-size: 0.85rem;
+      margin-bottom: 1.5rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Privacy Policy for Music Sync</h1>
+    <div class="date">Last Updated: September 19, 2026</div>
+
+    <p><strong>Music Sync</strong> ("we", "our", or "the App") is a peer-to-peer and local network companion application designed to synchronize, stream, and manage audio files between your Android device and personal computer. We are strictly committed to user privacy.</p>
+
+    <h2>1. Zero Data Collection & Local Network Privacy</h2>
+    <p>The App does <strong>not</strong> collect, store, transmit, or monetize any personal data, analytics, device identifiers, or user information. All network communication operates entirely within your private Local Area Network (Wi-Fi) directly with your desktop computer. No files or metadata are ever uploaded to cloud servers or third parties.</p>
+
+    <h2>2. Permissions and Usage</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Permission</th>
+          <th>Usage</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>READ_MEDIA_AUDIO</code> / <code>READ_EXTERNAL_STORAGE</code></td>
+          <td>Accesses music files on your device to display them and allow streaming/syncing to your desktop.</td>
+        </tr>
+        <tr>
+          <td><code>WRITE_EXTERNAL_STORAGE</code></td>
+          <td>Saves incoming audio files synced from your desktop to your device's Music folder.</td>
+        </tr>
+        <tr>
+          <td><code>INTERNET</code> & <code>ACCESS_WIFI_STATE</code></td>
+          <td>Runs an embedded local HTTP server for local Wi-Fi communication with the desktop app.</td>
+        </tr>
+        <tr>
+          <td><code>CHANGE_WIFI_MULTICAST_STATE</code></td>
+          <td>Enables automatic peer discovery across your local Wi-Fi network.</td>
+        </tr>
+        <tr>
+          <td><code>FOREGROUND_SERVICE_DATA_SYNC</code></td>
+          <td>Maintains background file transfers and audio streaming without interruption by battery savers.</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h2>3. Advertisements & Analytics</h2>
+    <p>The App contains no third-party advertisements, tracking libraries, or analytics SDKs.</p>
+
+    <h2>4. Children's Privacy</h2>
+    <p>The App does not collect any personal information from any user, including children under 13.</p>
+
+    <h2>5. Contact</h2>
+    <p>For questions regarding this policy, please reach out through the project's official support channels.</p>
+  </div>
+</body>
+</html>

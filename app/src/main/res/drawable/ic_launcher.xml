@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Pitch-Black AMOLED Background -->
+    <path
+        android:fillColor="#000000"
+        android:pathData="M0,0h108v108h-108z" />
+
+    <!-- Vivid Yellow Outer Accent Ring -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M54,14 A40,40 0 1,1 53.9,14"
+        android:strokeColor="#27272A"
+        android:strokeWidth="2" />
+
+    <!-- Musical Notes & Sync Wave (Vivid Yellow #FACC15) -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M44,70 V38 l32,-6 v30"
+        android:strokeColor="#FACC15"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="4" />
+
+    <path
+        android:fillColor="#FACC15"
+        android:pathData="M38,72 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0 Z" />
+
+    <path
+        android:fillColor="#FACC15"
+        android:pathData="M70,64 a6,6 0 1,0 12,0 a6,6 0 1,0 -12,0 Z" />
+
+    <!-- Sync Arrows in Yellow -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M30,50 L24,56 L30,62"
+        android:strokeColor="#FACC15"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="3" />
+
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M78,56 L84,50 L78,44"
+        android:strokeColor="#FACC15"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeWidth="3" />
+</vector>
