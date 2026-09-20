@@ -468,4 +468,27 @@ class DesktopApiClient {
         put("position_ms", positionMs)
         if (!streamUrl.isNullOrBlank()) put("stream_url", streamUrl)
     })
+
+    suspend fun sessionQueueSync(
+        ip: String, port: Int,
+        tracks: List<Song>
+    ): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val jsonArray = JSONArray()
+            for (song in tracks) {
+                jsonArray.put(JSONObject().apply {
+                    put("filepath", song.filepath)
+                    put("title", song.title)
+                    put("artist", song.artist)
+                    put("album", song.album)
+                })
+            }
+            val body = jsonArray.toString().toRequestBody("application/json".toMediaTypeOrNull())
+            val url = "${baseUrl(ip, port)}/api/session/queue_sync"
+            val request = Request.Builder().url(url).post(body).build()
+            client.newCall(request).execute().use { response -> response.isSuccessful }
+        } catch (e: Exception) {
+            false
+        }
+    }
 }

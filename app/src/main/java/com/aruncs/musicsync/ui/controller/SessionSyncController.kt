@@ -8,6 +8,7 @@ import android.provider.Settings
 import android.widget.Toast
 import com.aruncs.musicsync.model.Song
 import com.aruncs.musicsync.player.AudioPlayer
+import com.aruncs.musicsync.player.PlayableItem
 import com.aruncs.musicsync.player.RepeatMode
 import com.aruncs.musicsync.server.OverIpServer
 import com.aruncs.musicsync.session.SessionState
@@ -98,6 +99,15 @@ class SessionSyncController(
                 audioPlayer.addToQueueNext(song, streamUrl)
                 onLog("[SESSION] '$title' injected into queue from remote")
                 Toast.makeText(context, "Added '$title' to queue", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        OverIpServer.onSessionQueueSync = { tracks ->
+            mainHandler.post {
+                val items = tracks.map { s -> PlayableItem(s, null) }
+                audioPlayer.setQueue(items, 0)
+                onLog("[SESSION] Synced queue of ${tracks.size} tracks from remote")
+                Toast.makeText(context, "Synced queue of ${tracks.size} tracks from remote", Toast.LENGTH_SHORT).show()
             }
         }
 

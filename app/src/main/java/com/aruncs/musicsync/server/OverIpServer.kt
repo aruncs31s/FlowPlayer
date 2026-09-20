@@ -34,6 +34,7 @@ class OverIpServer(
         var onSessionPrev: (() -> Unit)? = null
         var onSessionSeek: ((positionMs: Int) -> Unit)? = null
         var onSessionQueueInject: ((filepath: String, title: String, artist: String, album: String, streamUrl: String?) -> Unit)? = null
+        var onSessionQueueSync: ((tracks: List<Song>) -> Unit)? = null
         var onSessionTransfer: ((filepath: String, title: String, artist: String, album: String, positionMs: Int, streamUrl: String?) -> Unit)? = null
     }
 
@@ -73,6 +74,7 @@ class OverIpServer(
                 "/api/session/prev" -> handleSessionPrev()
                 "/api/session/seek" -> handleSessionSeek(session)
                 "/api/session/queue_inject" -> handleSessionQueueInject(session)
+                "/api/session/queue_sync" -> handleSessionQueueSync(session)
                 "/api/session/transfer" -> handleSessionTransfer(session)
                 else -> newFixedLengthResponse(Response.Status.NOT_FOUND, "application/json", "{\"error\": \"Not Found\"}")
             }
@@ -515,5 +517,46 @@ class OverIpServer(
             onSessionTransfer?.invoke(filepath, title, artist, album, positionMs, streamUrl)
         }
         return newFixedLengthResponse(Response.Status.OK, "application/json", "{\"ok\":true}")
+    }
+
+    private fun handleSessionQueueSync(session: IHTTPSession): Response {
+        val body = try {
+            val map = mutableMapOf<String, String>()
+            session.parseBody(map)
+            JSONArray(map["postData"] ?: "[]")
+        } catch (e: Exception) { JSONArray() }
+
+        val songs = mutableListOf<Song>()
+        for (i in 0 until body.length()) {
+            val obj = body.getJSONObject(i)
+            val filepath = obj.optString("filepath", "")
+            val title = obj.optString("title", filepath)
+            val artist = obj.optString("artist", "")
+            val album = obj.optString("album", "")
+            if (filepath.isNotBlank()) {
+                songs.add(
+                    Song(
+                        id = System.currentTimeMillis() + i,
+                        title = title,
+                        artist = artist,
+                        album = album,
+                        filepath = filepath,
+                        filename = File(filepath).name,
+                        size = 0L,
+                        sizeFormatted = "",
+                        mtime = 0.0,
+                        mtimeStr = "",
+                        durationSec = 0.0,
+                        durationFormatted = "",
+                        bitrateKbps = "",
+                        searchableText = "$title $artist"
+                    )
+                )
+            }
+        }
+        if (songs.isNotEmpty()) {
+            onSessionQueueSync?.invoke(songs)
+        }
+        return newFixedLengthResponse(Response.Status.OK, "application/json", "{\"ok\":true,\"count\":${songs.size}}")
     }
 }
