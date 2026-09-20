@@ -364,6 +364,8 @@ class PlayerUiController(
         )
         rvFpQueue?.layoutManager = LinearLayoutManager(activity)
         rvFpQueue?.adapter = fpQueueAdapter
+        rvFpQueue?.setHasFixedSize(true)
+        rvFpQueue?.setItemViewCacheSize(20)
 
         // Device Target Switch -> Open Device Picker
         btnFpDeviceSwitch?.setOnClickListener { showDevicePicker() }

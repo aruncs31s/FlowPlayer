@@ -53,8 +53,10 @@ class LogAdapter : RecyclerView.Adapter<LogAdapter.LogViewHolder>() {
             }
             if (insertedIndex >= 0) {
                 try {
+                    notifyItemInserted(insertedIndex)
+                } catch (ignored: Throwable) {
                     notifyDataSetChanged()
-                } catch (ignored: Throwable) {}
+                }
             }
         } catch (ignored: Throwable) {}
     }
