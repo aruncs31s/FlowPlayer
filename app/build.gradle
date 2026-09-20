@@ -4,6 +4,8 @@ import java.util.Properties
 plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
+    id 'kotlin-kapt'
+    id 'com.google.dagger.hilt.android'
 }
 
 def keystorePropertiesFile = rootProject.file("keystore.properties")
@@ -24,6 +26,12 @@ android {
         versionName "1.0.0"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    testOptions {
+        unitTests {
+            includeAndroidResources = true
+        }
     }
 
     signingConfigs {
@@ -88,7 +96,15 @@ dependencies {
     // Embedded HTTP Server
     implementation 'org.nanohttpd:nanohttpd:2.3.1'
 
+    // Hilt DI
+    implementation 'com.google.dagger:hilt-android:2.48'
+    kapt 'com.google.dagger:hilt-android-compiler:2.48'
+
+    // Testing
     testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.mockito:mockito-core:5.8.0'
+    testImplementation 'org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3'
+    testImplementation 'org.robolectric:robolectric:4.11.1'
     androidTestImplementation 'androidx.test.ext:junit:1.1.5'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.1'
 }

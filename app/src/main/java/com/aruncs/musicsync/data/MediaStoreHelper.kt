@@ -9,7 +9,47 @@ import java.io.File
 
 object MediaStoreHelper {
 
-    fun getAllDeviceSongs(context: Context): List<Song> {
+    @Volatile
+    private var cachedSongs: List<Song>? = null
+    @Volatile
+    private var lastCacheTime: Long = 0L
+    private const val CACHE_TTL_MS = 30_000L // 30 seconds cache
+
+    fun invalidateCache() {
+        cachedSongs = null
+        lastCacheTime = 0L
+    }
+
+    fun getDeviceSongCount(context: Context): Int {
+        val cached = cachedSongs
+        if (cached != null && (System.currentTimeMillis() - lastCacheTime < CACHE_TTL_MS)) {
+            return cached.size
+        }
+        try {
+            val projection = arrayOf(MediaStore.Audio.Media._ID)
+            val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0"
+            context.contentResolver.query(
+                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                projection,
+                selection,
+                null,
+                null
+            )?.use { c ->
+                return c.count
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return cached?.size ?: 0
+    }
+
+    @Synchronized
+    fun getAllDeviceSongs(context: Context, forceRefresh: Boolean = false): List<Song> {
+        val cached = cachedSongs
+        if (!forceRefresh && cached != null && (System.currentTimeMillis() - lastCacheTime < CACHE_TTL_MS)) {
+            return cached
+        }
+
         val songList = mutableListOf<Song>()
         val seenPaths = HashSet<String>()
 
@@ -89,6 +129,8 @@ object MediaStoreHelper {
 
         // Sort descending by modification time
         songList.sortByDescending { it.mtime }
+        cachedSongs = songList
+        lastCacheTime = System.currentTimeMillis()
         return songList
     }
 
@@ -135,6 +177,7 @@ object MediaStoreHelper {
             } catch (ignored: Exception) {}
 
             MediaScannerHelper.scanFile(context, song.filepath)
+            invalidateCache()
             return moved
         } catch (e: Exception) {
             e.printStackTrace()
@@ -161,6 +204,7 @@ object MediaStoreHelper {
         }
 
         MediaScannerHelper.scanFile(context, song.filepath)
+        invalidateCache()
         return fileDeleted
     }
 }

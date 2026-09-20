@@ -47,7 +47,10 @@ import com.aruncs.musicsync.ui.dialog.PlaylistDialogsHelper
 import com.aruncs.musicsync.ui.dialog.QueueDialogHelper
 import com.aruncs.musicsync.ui.dialog.SessionManagerDialogHelper
 import com.aruncs.musicsync.util.PermissionHelper
+import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
 
+@AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
 
     companion object {
@@ -59,11 +62,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     // Core Managers & Clients
-    private lateinit var prefs: AppPreferences
-    private lateinit var syncManager: SyncManager
-    private lateinit var playlistManager: PlaylistManager
-    private val audioPlayer = AudioPlayer()
-    private val apiClient = DesktopApiClient()
+    @Inject lateinit var prefs: AppPreferences
+    @Inject lateinit var syncManager: SyncManager
+    @Inject lateinit var playlistManager: PlaylistManager
+    @Inject lateinit var audioPlayer: AudioPlayer
+    @Inject lateinit var apiClient: DesktopApiClient
     private val logAdapter = LogAdapter()
 
     // Tab Controllers
@@ -131,10 +134,6 @@ class MainActivity : AppCompatActivity() {
                 rvLogs?.scrollToPosition(logAdapter.itemCount - 1)
             }
         }
-
-        prefs = AppPreferences(this)
-        syncManager = SyncManager(this)
-        playlistManager = PlaylistManager(this)
 
         initViews()
         initControllers()

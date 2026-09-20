@@ -99,24 +99,25 @@ class OverIpServer(
     }
 
     private fun handlePing(): Response {
-        val songs = MediaStoreHelper.getAllDeviceSongs(context)
+        val count = MediaStoreHelper.getDeviceSongCount(context)
         val musicDir = prefs.musicStorageDirectory
         val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
 
         val json = JSONObject().apply {
             put("status", "ok")
             put("hostname", NetworkUtils.getDeviceModel())
-            put("song_count", songs.size)
+            put("song_count", count)
             put("folders", JSONArray().put(musicDir.absolutePath))
             put("server_time", sdf.format(Date()))
         }
 
-        log("[SERVER] Handled /api/ping from peer — ${songs.size} song(s) reported")
+        log("[SERVER] Handled /api/ping from peer — $count song(s) reported")
         return newFixedLengthResponse(Response.Status.OK, "application/json", json.toString())
     }
 
     private fun handleSongs(session: IHTTPSession): Response {
-        val songs = MediaStoreHelper.getAllDeviceSongs(context)
+        val forceRefresh = session.parameters["refresh"]?.firstOrNull()?.toBoolean() ?: false
+        val songs = MediaStoreHelper.getAllDeviceSongs(context, forceRefresh = forceRefresh)
         val jsonArray = JSONArray()
         for (s in songs) {
             jsonArray.put(s.toJSONObject())
@@ -383,6 +384,7 @@ class OverIpServer(
 
         if (destFile != null && destFile.exists()) {
             MediaScannerHelper.scanFile(context, destFile.absolutePath)
+            MediaStoreHelper.invalidateCache()
             log("[SERVER] Upload complete: Received '${destFile.name}' (${destFile.length()} bytes)")
             val json = JSONObject().apply {
                 put("status", "success")
@@ -419,6 +421,7 @@ class OverIpServer(
                 val name = file.name
                 file.delete()
                 MediaScannerHelper.scanFile(context, path)
+                MediaStoreHelper.invalidateCache()
                 log("[SERVER] Deleted file on device: $path")
                 val json = JSONObject().apply {
                     put("status", "success")
