@@ -713,7 +713,7 @@ class PlayerUiController(
             tvFpEmptyTitle?.text = "${remote.device.name} is Idle"
             tvFpEmptySubtitle?.text = "No track currently playing on ${remote.device.name}."
             btnFpEmptyResumeRemote?.visibility = View.VISIBLE
-            btnFpEmptyResumeRemote?.text = "▶  Start / Resume on ${remote.device.name}"
+            btnFpEmptyResumeRemote?.text = ":> Start / Resume on ${remote.device.name}"
 
             val localSong = audioPlayer.currentSong
             if (localSong != null) {
@@ -1053,10 +1053,20 @@ class PlayerUiController(
         }
 
         scope.launch(Dispatchers.IO) {
+            val bitmap = if (!isRemote) AudioInfoHelper.getEmbeddedArtwork(song) else null
             val streamUrl = if (isRemote) getStreamUrl(song) else null
             val details = AudioInfoHelper.extract(song, streamUrl)
             withContext(Dispatchers.Main) {
                 if (audioPlayer.currentSong?.id == song.id) {
+                    if (bitmap != null) {
+                        ivFpArtwork?.setImageBitmap(bitmap)
+                        ivFpArtwork?.colorFilter = null
+                        ivFpArtwork?.scaleType = ImageView.ScaleType.CENTER_CROP
+                    } else {
+                        ivFpArtwork?.setImageResource(R.drawable.ic_album)
+                        ivFpArtwork?.setColorFilter(ContextCompat.getColor(activity, R.color.card_stroke))
+                        ivFpArtwork?.scaleType = ImageView.ScaleType.CENTER_INSIDE
+                    }
                     tvFpBadgeFormat?.text = details.containerFormat
                     tvFpBadgeBitrate?.text = details.bitrateKbps.replace(" (CBR)", "").replace(" (Lossless)", "")
                     tvFpBadgeSamplerate?.text = if (details.sampleRateHz.contains("(")) {
