@@ -6,6 +6,7 @@ import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.core.content.ContextCompat
+import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
 import com.aruncs.musicsync.R
 import com.aruncs.musicsync.player.PlayableItem
@@ -18,15 +19,36 @@ class QueueAdapter(
     private var startIndexOffset: Int = 0
     private var currentIndex: Int = -1
 
+    private var colorYellow: Int = 0
+    private var colorTextPrimary: Int = 0
+    private var colorTextMuted: Int = 0
+
+    override fun onAttachedToRecyclerView(recyclerView: RecyclerView) {
+        super.onAttachedToRecyclerView(recyclerView)
+        val ctx = recyclerView.context
+        colorYellow = ContextCompat.getColor(ctx, R.color.yellow_primary)
+        colorTextPrimary = ContextCompat.getColor(ctx, R.color.text_primary)
+        colorTextMuted = ContextCompat.getColor(ctx, R.color.text_muted)
+    }
+
     fun submitQueue(queue: List<PlayableItem>, activeIndex: Int) {
-        // Window the queue to max 50 upcoming tracks starting from active index.
-        // This avoids inflating thousands of Views inside NestedScrollView which freezes UI and causes ANRs.
         val start = activeIndex.coerceAtLeast(0)
         val end = minOf(queue.size, start + 50)
-        this.items = if (queue.isNotEmpty() && start < queue.size) queue.subList(start, end) else emptyList()
+        val newItems = if (queue.isNotEmpty() && start < queue.size) queue.subList(start, end) else emptyList()
+
+        val oldItems = this.items
+        this.items = newItems
         this.startIndexOffset = start
         this.currentIndex = activeIndex
-        notifyDataSetChanged()
+
+        DiffUtil.calculateDiff(object : DiffUtil.Callback() {
+            override fun getOldListSize(): Int = oldItems.size
+            override fun getNewListSize(): Int = newItems.size
+            override fun areItemsTheSame(oldItemPosition: Int, newItemPosition: Int): Boolean =
+                oldItems[oldItemPosition].song.id == newItems[newItemPosition].song.id
+            override fun areContentsTheSame(oldItemPosition: Int, newItemPosition: Int): Boolean =
+                oldItems[oldItemPosition].song == newItems[newItemPosition].song
+        }).dispatchUpdatesTo(this)
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): QueueViewHolder {
@@ -46,6 +68,15 @@ class QueueAdapter(
         private val tvArtist: TextView = itemView.findViewById(R.id.tv_queue_artist)
         private val ivNowPlaying: ImageView = itemView.findViewById(R.id.iv_queue_now_playing)
 
+        init {
+            itemView.setOnClickListener {
+                val pos = bindingAdapterPosition
+                if (pos in items.indices) {
+                    onItemClick(startIndexOffset + pos)
+                }
+            }
+        }
+
         fun bind(item: PlayableItem, position: Int) {
             val actualIndex = startIndexOffset + position
             val song = item.song
@@ -56,17 +87,13 @@ class QueueAdapter(
             tvArtist.text = song.artist.ifBlank { "Unknown Artist" }
 
             if (isActive) {
-                tvTitle.setTextColor(ContextCompat.getColor(itemView.context, R.color.yellow_primary))
-                tvIndex.setTextColor(ContextCompat.getColor(itemView.context, R.color.yellow_primary))
+                tvTitle.setTextColor(colorYellow)
+                tvIndex.setTextColor(colorYellow)
                 ivNowPlaying.visibility = View.VISIBLE
             } else {
-                tvTitle.setTextColor(ContextCompat.getColor(itemView.context, R.color.text_primary))
-                tvIndex.setTextColor(ContextCompat.getColor(itemView.context, R.color.text_muted))
+                tvTitle.setTextColor(colorTextPrimary)
+                tvIndex.setTextColor(colorTextMuted)
                 ivNowPlaying.visibility = View.GONE
-            }
-
-            itemView.setOnClickListener {
-                onItemClick(actualIndex)
             }
         }
     }

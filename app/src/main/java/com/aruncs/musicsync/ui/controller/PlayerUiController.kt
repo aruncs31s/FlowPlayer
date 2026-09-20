@@ -281,8 +281,10 @@ class PlayerUiController(
         setupAudioPlayerCallbacks()
 
         audioPlayer.currentSong?.let { song ->
+            val artistText = song.artist.ifBlank { "Unknown Artist" }
+            val albumText = if (song.album.isNotBlank() && song.album != "Unknown Album") " • ${song.album}" else ""
             tvPlayerTitle?.text = song.title.ifBlank { song.filename }
-            tvPlayerArtist?.text = song.artist.ifBlank { "Unknown Artist" }
+            tvPlayerArtist?.text = "$artistText$albumText"
             val isPlaying = audioPlayer.isPlaying
             btnPlayerPlayPause?.setImageResource(if (isPlaying) R.drawable.ic_pause else R.drawable.ic_play)
             updatePlayerControlsState()
@@ -506,8 +508,10 @@ class PlayerUiController(
                     if (currentTab != 2) { // TAB_PLAYER = 2
                         playerBarContainer.visibility = View.VISIBLE
                     }
+                    val artistText = song.artist.ifBlank { "Unknown Artist" }
+                    val albumText = if (song.album.isNotBlank() && song.album != "Unknown Album") " • ${song.album}" else ""
                     tvPlayerTitle?.text = song.title.ifBlank { song.filename }
-                    tvPlayerArtist?.text = song.artist.ifBlank { "Unknown Artist" }
+                    tvPlayerArtist?.text = "$artistText$albumText"
                     val isPlaying = audioPlayer.isPlaying
                     btnPlayerPlayPause?.setImageResource(if (isPlaying) R.drawable.ic_pause else R.drawable.ic_play)
                     onActiveSongChanged(song, isPlaying)

@@ -292,20 +292,21 @@
                         android:singleLine="true"
                         android:text="Artist Name"
                         android:textColor="@color/yellow_primary"
-                        android:textSize="15sp"
+                        android:textSize="16sp"
                         android:textStyle="bold" />
 
                     <TextView
                         android:id="@+id/tv_fp_album"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:layout_marginTop="2dp"
+                        android:layout_marginTop="3dp"
                         android:ellipsize="end"
                         android:gravity="center"
                         android:singleLine="true"
                         android:text="Album Name"
-                        android:textColor="@color/text_muted"
-                        android:textSize="12sp" />
+                        android:textColor="@color/text_secondary"
+                        android:textSize="13sp"
+                        android:textStyle="bold" />
 
                     <!-- Audio Specs Badge Chips -->
                     <LinearLayout

@@ -158,7 +158,8 @@ class SongsAdapter(
 
     inner class SongViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         private val tvTitle: TextView = itemView.findViewById(R.id.tv_song_title)
-        private val tvSubtitle: TextView = itemView.findViewById(R.id.tv_song_subtitle)
+        private val tvArtist: TextView = itemView.findViewById(R.id.tv_song_artist)
+        private val tvAlbum: TextView = itemView.findViewById(R.id.tv_song_album)
         private val tvDuration: TextView = itemView.findViewById(R.id.tv_song_duration)
         private val tvMeta: TextView = itemView.findViewById(R.id.tv_song_meta)
         private val btnPlay: ImageButton = itemView.findViewById(R.id.btn_song_play)
@@ -205,7 +206,8 @@ class SongsAdapter(
 
         fun bind(song: Song) {
             tvTitle.text = song.title.ifBlank { song.filename }
-            tvSubtitle.text = "${song.artist.ifBlank { "Unknown Artist" }} • ${song.album.ifBlank { "Unknown Album" }}"
+            tvArtist.text = song.artist.ifBlank { "Unknown Artist" }
+            tvAlbum.text = if (song.album.isNotBlank() && song.album != "Unknown Album") song.album else "Music Sync Library"
             tvDuration.text = song.durationFormatted
             tvMeta.text = song.sizeFormatted
 

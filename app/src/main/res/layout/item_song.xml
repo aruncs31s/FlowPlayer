@@ -39,15 +39,27 @@
             android:textStyle="bold" />
 
         <TextView
-            android:id="@+id/tv_song_subtitle"
+            android:id="@+id/tv_song_artist"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="2dp"
             android:ellipsize="end"
             android:maxLines="1"
-            android:text="Artist • Album"
+            android:text="Artist Name"
+            android:textColor="@color/yellow_primary"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/tv_song_album"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="1dp"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:text="Album Name"
             android:textColor="@color/text_secondary"
-            android:textSize="13sp" />
+            android:textSize="12sp" />
     </LinearLayout>
 
     <LinearLayout
