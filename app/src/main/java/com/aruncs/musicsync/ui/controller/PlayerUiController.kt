@@ -16,6 +16,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.aruncs.musicsync.R
 import com.aruncs.musicsync.client.DesktopApiClient
+import com.aruncs.musicsync.data.AppPreferences
 import com.aruncs.musicsync.data.PlaylistManager
 import com.aruncs.musicsync.model.PlaybackTarget
 import com.aruncs.musicsync.model.Song
@@ -44,6 +45,7 @@ class PlayerUiController(
     private val audioPlayer: AudioPlayer,
     private val playlistManager: PlaylistManager,
     private val apiClient: DesktopApiClient,
+    private val prefs: AppPreferences,
     private val getSavedDevices: () -> List<SyncDevice>,
     private val onAddDeviceRequested: () -> Unit,
     private val getLocalWifiIp: () -> String?,
@@ -475,6 +477,7 @@ class PlayerUiController(
 
     private fun setupAudioPlayerCallbacks() {
         audioPlayer.onTrackChanged = { song ->
+            prefs.saveLastPlayedSong(song, audioPlayer.currentItem?.streamUrl)
             activity.runOnUiThread {
                 if (currentTarget is PlaybackTarget.Local) {
                     if (currentTab != 2) { // TAB_PLAYER = 2
@@ -482,8 +485,9 @@ class PlayerUiController(
                     }
                     tvPlayerTitle?.text = song.title.ifBlank { song.filename }
                     tvPlayerArtist?.text = song.artist.ifBlank { "Unknown Artist" }
-                    btnPlayerPlayPause?.setImageResource(R.drawable.ic_pause)
-                    onActiveSongChanged(song, true)
+                    val isPlaying = audioPlayer.isPlaying
+                    btnPlayerPlayPause?.setImageResource(if (isPlaying) R.drawable.ic_pause else R.drawable.ic_play)
+                    onActiveSongChanged(song, isPlaying)
                     updatePlayerControlsState()
                     updatePlayerLikeButton(song)
                     updatePlayerScreenUI(song)

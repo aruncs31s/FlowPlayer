@@ -33,6 +33,7 @@ import com.aruncs.musicsync.data.PlaylistManager
 import com.aruncs.musicsync.model.PlaybackTarget
 import com.aruncs.musicsync.model.Song
 import com.aruncs.musicsync.player.AudioPlayer
+import com.aruncs.musicsync.player.PlayableItem
 import com.aruncs.musicsync.server.NetworkUtils
 import com.aruncs.musicsync.server.PeerDiscoveryManager
 import com.aruncs.musicsync.server.SyncForegroundService
@@ -44,6 +45,7 @@ import com.aruncs.musicsync.ui.controller.SessionSyncController
 import com.aruncs.musicsync.ui.controller.SyncTabController
 import com.aruncs.musicsync.ui.dialog.AudioInfoDialogHelper
 import com.aruncs.musicsync.ui.dialog.PlaylistDialogsHelper
+import com.aruncs.musicsync.ui.dialog.QueryRunnerDialogHelper
 import com.aruncs.musicsync.ui.dialog.QueueDialogHelper
 import com.aruncs.musicsync.ui.dialog.SessionManagerDialogHelper
 import com.aruncs.musicsync.util.PermissionHelper
@@ -120,6 +122,7 @@ class MainActivity : AppCompatActivity() {
     private var rvLogs: RecyclerView? = null
     private var btnLogsClear: Button? = null
     private var btnLogsCrash: Button? = null
+    private var btnLogsQuery: Button? = null
 
     private var currentTab = TAB_SYNC
 
@@ -138,6 +141,13 @@ class MainActivity : AppCompatActivity() {
         initViews()
         initControllers()
         initTabViews()
+
+        val lastPlayed = prefs.getLastPlayedSong()
+        if (lastPlayed != null && audioPlayer.currentSong == null) {
+            val (song, streamUrl) = lastPlayed
+            audioPlayer.restoreState(PlayableItem(song, streamUrl))
+        }
+
         setupViewPager()
         setupListeners()
         setupServiceCallbacks()
@@ -238,6 +248,7 @@ class MainActivity : AppCompatActivity() {
             audioPlayer = audioPlayer,
             playlistManager = playlistManager,
             apiClient = apiClient,
+            prefs = prefs,
             getSavedDevices = { syncTabController.getKnownDevices() },
             onAddDeviceRequested = { syncTabController.showAddDeviceDialog() },
             getLocalWifiIp = { NetworkUtils.getWifiIpAddress(this) },
@@ -348,11 +359,15 @@ class MainActivity : AppCompatActivity() {
         rvLogs = logsView.findViewById(R.id.rv_logs)
         btnLogsClear = logsView.findViewById(R.id.btn_logs_clear)
         btnLogsCrash = logsView.findViewById(R.id.btn_logs_crash)
+        btnLogsQuery = logsView.findViewById(R.id.btn_logs_query)
 
         rvLogs?.layoutManager = LinearLayoutManager(this)
         rvLogs?.adapter = logAdapter
 
         btnLogsClear?.setOnClickListener { logAdapter.clear() }
+        btnLogsQuery?.setOnClickListener {
+            QueryRunnerDialogHelper.show(this)
+        }
         btnLogsCrash?.setOnClickListener {
             val logs = CrashLogger.getCrashLogs(this)
             AlertDialog.Builder(this)
@@ -540,9 +555,16 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showQueueDialog() {
-        QueueDialogHelper.show(this, audioPlayer) {
-            playerController.onTabChanged(currentTab)
-        }
+        QueueDialogHelper.show(
+            context = this,
+            audioPlayer = audioPlayer,
+            scope = lifecycleScope,
+            apiClient = apiClient,
+            getTargetPeerIp = { getTargetPeerIp() },
+            getTargetPeerPort = { getTargetPeerPort() },
+            getTargetPeerName = { activePeerName },
+            onQueueCleared = { playerController.onTabChanged(currentTab) }
+        )
     }
 
     private fun showAddToPlaylistDialog(song: Song) {
@@ -611,7 +633,9 @@ class MainActivity : AppCompatActivity() {
             SyncForegroundService.onStateChanged = null
         } catch (ignored: Throwable) {}
         PeerDiscoveryManager.stopListener()
-        audioPlayer.release()
+        if (isFinishing) {
+            audioPlayer.release()
+        }
         super.onDestroy()
     }
 }

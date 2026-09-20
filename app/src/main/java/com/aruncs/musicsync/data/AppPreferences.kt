@@ -3,8 +3,10 @@ package com.aruncs.musicsync.data
 import android.content.Context
 import android.content.SharedPreferences
 import android.os.Environment
+import com.aruncs.musicsync.model.Song
 import com.aruncs.musicsync.model.SyncDevice
 import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
 
 class AppPreferences(context: Context) {
@@ -114,5 +116,46 @@ class AppPreferences(context: Context) {
     fun removeDevice(id: String) {
         val current = getSavedDevices().filterNot { it.id == id }
         saveDevices(current)
+    }
+
+    fun saveLastPlayedSong(song: Song, streamUrl: String?) {
+        val obj = JSONObject().apply {
+            put("id", song.id)
+            put("title", song.title)
+            put("artist", song.artist)
+            put("album", song.album)
+            put("filepath", song.filepath)
+            put("filename", song.filename)
+            put("durationSec", song.durationSec)
+            put("streamUrl", streamUrl ?: "")
+        }
+        prefs.edit().putString("last_played_song", obj.toString()).apply()
+    }
+
+    fun getLastPlayedSong(): Pair<Song, String?>? {
+        val str = prefs.getString("last_played_song", null) ?: return null
+        return try {
+            val obj = JSONObject(str)
+            val song = Song(
+                id = obj.optLong("id"),
+                title = obj.optString("title"),
+                artist = obj.optString("artist"),
+                album = obj.optString("album"),
+                filepath = obj.optString("filepath"),
+                filename = obj.optString("filename"),
+                size = 0L,
+                sizeFormatted = "",
+                mtime = 0.0,
+                mtimeStr = "",
+                durationSec = obj.optDouble("durationSec"),
+                durationFormatted = "",
+                bitrateKbps = "",
+                searchableText = ""
+            )
+            val streamUrl = obj.optString("streamUrl").ifBlank { null }
+            Pair(song, streamUrl)
+        } catch (e: Exception) {
+            null
+        }
     }
 }

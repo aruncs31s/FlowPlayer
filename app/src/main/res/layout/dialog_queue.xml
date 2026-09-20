@@ -79,9 +79,21 @@
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/rv_dialog_queue"
         android:layout_width="match_parent"
-        android:layout_height="350dp"
+        android:layout_height="300dp"
         android:clipToPadding="false"
         android:paddingTop="8dp"
         android:paddingBottom="8dp" />
+
+    <Button
+        android:id="@+id/btn_dialog_queue_sync_peer"
+        android:layout_width="match_parent"
+        android:layout_height="42dp"
+        android:layout_marginTop="4dp"
+        android:background="@drawable/bg_button_yellow"
+        android:text="Sync Queue to Selected Peer"
+        android:textAllCaps="false"
+        android:textColor="@color/black"
+        android:textSize="13sp"
+        android:textStyle="bold" />
 
 </LinearLayout>

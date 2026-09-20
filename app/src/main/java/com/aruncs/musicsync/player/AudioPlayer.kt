@@ -262,6 +262,21 @@ class AudioPlayer {
         stop()
     }
 
+    fun restoreState(item: PlayableItem) {
+        _queue.clear()
+        _queue.add(item)
+        originalQueue.clear()
+        originalQueue.add(item)
+        currentIndex = 0
+        consecutiveErrors = 0
+        currentSong = item.song
+        CrashLogger.currentPlayingSong = item.song
+        onQueueChanged?.invoke(_queue, currentIndex)
+        onModeChanged?.invoke(isShuffled, repeatMode)
+        onTrackChanged?.invoke(item.song)
+        onStateChanged?.invoke(false)
+    }
+
     private fun playItem(item: PlayableItem) {
         val song = item.song
         val streamUrl = item.streamUrl
@@ -410,7 +425,13 @@ class AudioPlayer {
     }
 
     fun togglePlayPause() {
-        val mp = mediaPlayer ?: return
+        val mp = mediaPlayer
+        if (mp == null) {
+            if (currentIndex in 0 until _queue.size) {
+                playItem(_queue[currentIndex])
+            }
+            return
+        }
         try {
             val playing = try { mp.isPlaying } catch (e: Exception) { false }
             if (playing) {
