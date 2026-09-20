@@ -42,18 +42,30 @@ class LogAdapter : RecyclerView.Adapter<LogAdapter.LogViewHolder>() {
             msg = raw
         }
 
-        logs.add(LogEntry(now, tag, msg))
-        if (logs.size > 1000) {
-            logs.removeAt(0)
-            notifyItemRemoved(0)
-        }
-        notifyItemInserted(logs.size - 1)
+        try {
+            var insertedIndex = -1
+            synchronized(logs) {
+                logs.add(LogEntry(now, tag, msg))
+                if (logs.size > 1000) {
+                    logs.removeAt(0)
+                }
+                insertedIndex = logs.size - 1
+            }
+            if (insertedIndex >= 0) {
+                try {
+                    notifyDataSetChanged()
+                } catch (ignored: Throwable) {}
+            }
+        } catch (ignored: Throwable) {}
     }
 
     fun clear() {
-        val size = logs.size
-        logs.clear()
-        notifyItemRangeRemoved(0, size)
+        try {
+            synchronized(logs) {
+                logs.clear()
+            }
+            notifyDataSetChanged()
+        } catch (ignored: Throwable) {}
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): LogViewHolder {

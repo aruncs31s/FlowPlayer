@@ -1,5 +1,12 @@
 package com.aruncs.musicsync.client
 
+import android.content.ContentUris
+import android.content.ContentValues
+import android.content.Context
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
+import com.aruncs.musicsync.model.Playlist
 import com.aruncs.musicsync.model.Song
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -62,17 +69,51 @@ class DesktopApiClient {
         }
     }
 
+    suspend fun fetchPlaylistTracks(
+        ip: String,
+        port: Int,
+        playlistId: Long? = null,
+        playlistName: String? = null
+    ): List<Song> = withContext(Dispatchers.IO) {
+        val queryParam = if (playlistId != null) {
+            "?id=$playlistId"
+        } else if (!playlistName.isNullOrBlank()) {
+            "?name=${URLEncoder.encode(playlistName, "UTF-8")}"
+        } else ""
+
+        val url = "${baseUrl(ip, port)}/api/playlist/tracks$queryParam"
+        val request = Request.Builder().url(url).build()
+
+        client.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) {
+                throw Exception("HTTP ${response.code}: ${response.message}")
+            }
+            val body = response.body?.string() ?: throw Exception("Empty tracks payload")
+            val array = JSONArray(body)
+            val list = mutableListOf<Song>()
+            for (i in 0 until array.length()) {
+                val obj = array.getJSONObject(i)
+                list.add(Song.fromJSONObject(obj))
+            }
+            list
+        }
+    }
+
     suspend fun downloadSong(
         ip: String,
         port: Int,
         remoteFilepath: String,
         destFile: File,
         bitrate: String? = null,
+        context: Context? = null,
         onProgress: ((bytesRead: Long, totalBytes: Long) -> Unit)? = null
     ): Boolean = withContext(Dispatchers.IO) {
-        val encoded = URLEncoder.encode(remoteFilepath, "UTF-8")
-        val qualityQuery = if (!bitrate.isNullOrBlank() && bitrate.lowercase() != "original") "&bitrate=$bitrate" else ""
-        val url = "${baseUrl(ip, port)}/api/song/stream?filepath=$encoded$qualityQuery"
+        val encodedPath = URLEncoder.encode(remoteFilepath, "UTF-8")
+        val filename = destFile.name.ifBlank { File(remoteFilepath).name }
+        val encodedName = URLEncoder.encode(filename, "UTF-8")
+        val numBr = bitrate?.filter { it.isDigit() }
+        val qualityQuery = if (!numBr.isNullOrBlank()) "&target_bitrate=$numBr&bitrate=$numBr" else ""
+        val url = "${baseUrl(ip, port)}/api/song/stream?filepath=$encodedPath&filename=$encodedName$qualityQuery"
         val request = Request.Builder().url(url).build()
 
         client.newCall(request).execute().use { response ->
@@ -82,13 +123,103 @@ class DesktopApiClient {
 
             val body = response.body ?: throw Exception("Empty body downloading track")
             val totalBytes = body.contentLength()
+
+            val hasAllFilesAccess = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                Environment.isExternalStorageManager()
+            } else {
+                true
+            }
+
+            // On Android 10+ (API 29+), if app does not have full storage management,
+            // write directly into public Music collection via MediaStore API
+            if (!hasAllFilesAccess && context != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                return@withContext downloadViaMediaStore(context, destFile, body, totalBytes, onProgress)
+            }
+
+            try {
+                val parentDir = destFile.parentFile
+                if (parentDir != null && !parentDir.exists()) {
+                    parentDir.mkdirs()
+                }
+
+                val tmpFile = File(destFile.parentFile, "${destFile.name}.downloading")
+                if (tmpFile.exists()) tmpFile.delete()
+
+                var downloadedBytes = 0L
+                body.byteStream().use { input ->
+                    FileOutputStream(tmpFile).use { output ->
+                        val buffer = ByteArray(8192)
+                        var read: Int
+                        while (input.read(buffer).also { read = it } != -1) {
+                            output.write(buffer, 0, read)
+                            downloadedBytes += read
+                            onProgress?.invoke(downloadedBytes, totalBytes)
+                        }
+                        output.flush()
+                    }
+                }
+
+                if (destFile.exists()) destFile.delete()
+                tmpFile.renameTo(destFile)
+                true
+            } catch (e: Exception) {
+                if (context != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    downloadViaMediaStore(context, destFile, body, totalBytes, onProgress)
+                } else {
+                    throw e
+                }
+            }
+        }
+    }
+
+    private fun downloadViaMediaStore(
+        context: Context,
+        destFile: File,
+        body: okhttp3.ResponseBody,
+        totalBytes: Long,
+        onProgress: ((bytesRead: Long, totalBytes: Long) -> Unit)?
+    ): Boolean {
+        val resolver = context.contentResolver
+        val filename = destFile.name
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            try {
+                val projection = arrayOf(MediaStore.Audio.Media._ID)
+                val selection = "${MediaStore.Audio.Media.DISPLAY_NAME} = ?"
+                val selectionArgs = arrayOf(filename)
+                resolver.query(
+                    MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                    projection,
+                    selection,
+                    selectionArgs,
+                    null
+                )?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val id = cursor.getLong(cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID))
+                        val uri = ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
+                        resolver.delete(uri, null, null)
+                    }
+                }
+            } catch (ignored: Exception) {}
+        }
+
+        val contentValues = ContentValues().apply {
+            put(MediaStore.Audio.Media.DISPLAY_NAME, filename)
+            put(MediaStore.Audio.Media.TITLE, filename.substringBeforeLast('.'))
+            put(MediaStore.Audio.Media.MIME_TYPE, getAudioMimeType(filename))
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                put(MediaStore.Audio.Media.RELATIVE_PATH, Environment.DIRECTORY_MUSIC)
+                put(MediaStore.Audio.Media.IS_PENDING, 1)
+            }
+        }
+
+        val uri = resolver.insert(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, contentValues)
+            ?: throw Exception("Could not create MediaStore entry for $filename")
+
+        try {
             var downloadedBytes = 0L
-
-            val tmpFile = File(destFile.parentFile, "${destFile.name}.downloading")
-            if (tmpFile.exists()) tmpFile.delete()
-
-            body.byteStream().use { input ->
-                FileOutputStream(tmpFile).use { output ->
+            resolver.openOutputStream(uri)?.use { output ->
+                body.byteStream().use { input ->
                     val buffer = ByteArray(8192)
                     var read: Int
                     while (input.read(buffer).also { read = it } != -1) {
@@ -98,11 +229,31 @@ class DesktopApiClient {
                     }
                     output.flush()
                 }
-            }
+            } ?: throw Exception("Could not open output stream for MediaStore URI: $uri")
 
-            if (destFile.exists()) destFile.delete()
-            tmpFile.renameTo(destFile)
-            true
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                contentValues.clear()
+                contentValues.put(MediaStore.Audio.Media.IS_PENDING, 0)
+                resolver.update(uri, contentValues, null, null)
+            }
+            return true
+        } catch (e: Exception) {
+            try {
+                resolver.delete(uri, null, null)
+            } catch (ignored: Exception) {}
+            throw e
+        }
+    }
+
+    private fun getAudioMimeType(filename: String): String {
+        return when (filename.substringAfterLast('.', "").lowercase(java.util.Locale.US)) {
+            "mp3" -> "audio/mpeg"
+            "flac" -> "audio/flac"
+            "m4a", "aac" -> "audio/mp4"
+            "ogg", "oga" -> "audio/ogg"
+            "wav" -> "audio/wav"
+            "opus" -> "audio/opus"
+            else -> "audio/*"
         }
     }
 
@@ -145,6 +296,7 @@ class DesktopApiClient {
         val requestBody = MultipartBody.Builder()
             .setType(MultipartBody.FORM)
             .addFormDataPart("file", localFile.name, fileBody)
+            .addFormDataPart("filename", localFile.name)
             .build()
 
         val request = Request.Builder()

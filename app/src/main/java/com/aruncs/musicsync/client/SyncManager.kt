@@ -4,6 +4,8 @@ import android.content.Context
 import com.aruncs.musicsync.data.AppPreferences
 import com.aruncs.musicsync.data.MediaScannerHelper
 import com.aruncs.musicsync.data.MediaStoreHelper
+import com.aruncs.musicsync.data.PlaylistManager
+import com.aruncs.musicsync.model.Playlist
 import com.aruncs.musicsync.model.Song
 import com.aruncs.musicsync.model.SyncDiff
 import kotlinx.coroutines.Dispatchers
@@ -92,13 +94,13 @@ class SyncManager(private val context: Context) {
             onLog("[SYNC-PULL] ($trackNum/$total) Downloading: ${song.filename} (${song.sizeFormatted})")
 
             try {
-                val success = apiClient.downloadSong(desktopIp, desktopPort, song.filepath, destFile, bitrate = quality) { bytesRead, totalBytes ->
+                val success = apiClient.downloadSong(desktopIp, desktopPort, song.filepath, destFile, bitrate = quality, context = context) { bytesRead, totalBytes ->
                     val filePct = if (totalBytes > 0) ((bytesRead * 100) / totalBytes).toInt() else 0
                     val overallPct = (((trackNum - 1) * 100) + filePct) / total
                     onProgress(trackNum, total, song, overallPct, "Downloading: ${song.filename} ($filePct%)")
                 }
 
-                if (success && destFile.exists()) {
+                if (success) {
                     downloadedPaths.add(destFile.absolutePath)
                     successCount++
                     onLog("[SYNC-PULL] ($trackNum/$total) OK: Saved '${destFile.name}'")
@@ -186,4 +188,92 @@ class SyncManager(private val context: Context) {
         onProgress = { current, total, song, _, _ -> onProgress(current, total, song.filename) },
         onLog = {}
     )
+
+    suspend fun syncPlaylistFromPeer(
+        peerIp: String,
+        peerPort: Int,
+        playlist: Playlist,
+        targetBitrate: String? = null,
+        onProgress: (current: Int, total: Int, song: Song, percent: Int, message: String) -> Unit,
+        onLog: (String) -> Unit
+    ): Pair<Int, File?> = withContext(Dispatchers.IO) {
+        val destDir = prefs.musicStorageDirectory
+        val playlistManager = PlaylistManager(context)
+
+        onLog("[PLAYLIST-SYNC] Fetching track list for '${playlist.name}' from $peerIp:$peerPort...")
+        val peerTracks = apiClient.fetchPlaylistTracks(peerIp, peerPort, playlistId = playlist.id, playlistName = playlist.name)
+
+        if (peerTracks.isEmpty()) {
+            onLog("[PLAYLIST-SYNC] No tracks found for playlist '${playlist.name}' on peer")
+            return@withContext Pair(0, null)
+        }
+
+        // Compare against local library
+        val localSongs = MediaStoreHelper.getAllDeviceSongs(context)
+        val localFilenameMap = localSongs.associateBy { it.filename.lowercase(Locale.US) }
+        val localKeyMap = localSongs.associateBy { normalizeKey(it.title, it.artist) }
+
+        val missingTracks = mutableListOf<Song>()
+        val localTrackPaths = mutableListOf<String>()
+
+        for (track in peerTracks) {
+            val fn = track.filename.lowercase(Locale.US)
+            val key = normalizeKey(track.title, track.artist)
+
+            val existing = localFilenameMap[fn] ?: localKeyMap[key]
+            if (existing != null) {
+                localTrackPaths.add(existing.filepath)
+            } else {
+                missingTracks.add(track)
+            }
+        }
+
+        onLog("[PLAYLIST-SYNC] Playlist '${playlist.name}': ${peerTracks.size} total, ${localTrackPaths.size} already local, ${missingTracks.size} missing to download")
+
+        val quality = targetBitrate ?: prefs.downloadQuality
+        var downloadedCount = 0
+
+        for ((index, song) in missingTracks.withIndex()) {
+            val trackNum = index + 1
+            val total = missingTracks.size
+            val effectiveFilename = if (!quality.equals("original", ignoreCase = true) &&
+                (song.filename.endsWith(".flac", ignoreCase = true) || song.filename.endsWith(".wav", ignoreCase = true))) {
+                "${song.filename.substringBeforeLast('.')}.m4a"
+            } else {
+                song.filename
+            }
+            val destFile = File(destDir, effectiveFilename)
+
+            onProgress(trackNum, total, song, ((trackNum - 1) * 100) / total, "Downloading: ${destFile.name}")
+            onLog("[PLAYLIST-SYNC] ($trackNum/$total) Downloading '${song.filename}' from peer...")
+
+            try {
+                val success = apiClient.downloadSong(peerIp, peerPort, song.filepath, destFile, bitrate = quality, context = context) { bytesRead, totalBytes ->
+                    val filePct = if (totalBytes > 0) ((bytesRead * 100) / totalBytes).toInt() else 0
+                    val overallPct = (((trackNum - 1) * 100) + filePct) / total
+                    onProgress(trackNum, total, song, overallPct, "Downloading: ${song.filename} ($filePct%)")
+                }
+
+                if (success) {
+                    localTrackPaths.add(destFile.absolutePath)
+                    downloadedCount++
+                    MediaScannerHelper.scanFile(context, destFile.absolutePath)
+                    onLog("[PLAYLIST-SYNC] ($trackNum/$total) OK: Saved '${destFile.name}'")
+                }
+            } catch (e: Exception) {
+                onLog("[ERROR] ($trackNum/$total) Failed to download '${song.filename}': ${e.message}")
+            }
+        }
+
+        // Reconstruct / Save playlist locally in PlaylistManager
+        val savedPlaylist = playlistManager.syncRemotePlaylist(playlist.name, localTrackPaths)
+        // Export standard .m3u8 playlist file for Poweramp & other media players
+        val m3uFile = playlistManager.exportM3u8Playlist(savedPlaylist, destDir)
+        if (m3uFile != null) {
+            onLog("[PLAYLIST-SYNC] Generated Poweramp .m3u8 playlist: '${m3uFile.name}' in Playlists/")
+        }
+
+        onLog("[PLAYLIST-SYNC] Complete! Synchronized '${playlist.name}' ($downloadedCount new track(s) downloaded)")
+        Pair(downloadedCount, m3uFile)
+    }
 }

@@ -4,6 +4,7 @@ import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.os.Handler
 import android.os.Looper
+import com.aruncs.musicsync.data.CrashLogger
 import com.aruncs.musicsync.model.Song
 import java.io.File
 import java.util.Collections
@@ -11,7 +12,9 @@ import java.util.Collections
 data class PlayableItem(
     val song: Song,
     val streamUrl: String? = null
-)
+) {
+    val isRemote: Boolean get() = !streamUrl.isNullOrBlank()
+}
 
 enum class RepeatMode {
     OFF, ALL, ONE
@@ -23,8 +26,29 @@ class AudioPlayer {
     var currentSong: Song? = null
         private set
 
+    val currentItem: PlayableItem?
+        get() = if (currentIndex in 0 until _queue.size) _queue[currentIndex] else null
+
     val isPlaying: Boolean
-        get() = mediaPlayer?.isPlaying == true
+        get() = try {
+            mediaPlayer?.isPlaying == true
+        } catch (e: Exception) {
+            false
+        }
+
+    val currentPosition: Int
+        get() = try {
+            mediaPlayer?.currentPosition ?: 0
+        } catch (e: Exception) {
+            0
+        }
+
+    val duration: Int
+        get() = try {
+            mediaPlayer?.duration ?: 0
+        } catch (e: Exception) {
+            0
+        }
 
     private val _queue = mutableListOf<PlayableItem>()
     private val originalQueue = mutableListOf<PlayableItem>()
@@ -48,10 +72,14 @@ class AudioPlayer {
         }
 
     val hasPrevious: Boolean
-        get() = currentIndex > 0 || (mediaPlayer != null && (mediaPlayer?.currentPosition ?: 0) > 3000)
+        get() = currentIndex > 0 || currentPosition > 3000
 
     private val handler = Handler(Looper.getMainLooper())
     private var progressRunnable: Runnable? = null
+
+    // Safeguard against unbounded error recursion
+    private var consecutiveErrors = 0
+    private val MAX_CONSECUTIVE_ERRORS = 4
 
     var onStateChanged: ((isPlaying: Boolean) -> Unit)? = null
     var onTrackChanged: ((Song) -> Unit)? = null
@@ -68,6 +96,7 @@ class AudioPlayer {
         originalQueue.add(item)
         currentIndex = 0
         isShuffled = false
+        consecutiveErrors = 0
         onQueueChanged?.invoke(_queue, currentIndex)
         onModeChanged?.invoke(isShuffled, repeatMode)
         playItem(item)
@@ -80,6 +109,7 @@ class AudioPlayer {
         originalQueue.addAll(items)
         isShuffled = false
         currentIndex = startIndex.coerceIn(0, (items.size - 1).coerceAtLeast(0))
+        consecutiveErrors = 0
         onQueueChanged?.invoke(_queue, currentIndex)
         onModeChanged?.invoke(isShuffled, repeatMode)
         if (_queue.isNotEmpty()) {
@@ -94,6 +124,7 @@ class AudioPlayer {
         originalQueue.add(item)
         if (wasEmpty) {
             currentIndex = _queue.size - 1
+            consecutiveErrors = 0
             onQueueChanged?.invoke(_queue, currentIndex)
             playItem(item)
         } else {
@@ -116,6 +147,7 @@ class AudioPlayer {
     fun playTrackAtIndex(index: Int): Boolean {
         if (index in 0 until _queue.size) {
             currentIndex = index
+            consecutiveErrors = 0
             onQueueChanged?.invoke(_queue, currentIndex)
             playItem(_queue[currentIndex])
             return true
@@ -170,11 +202,15 @@ class AudioPlayer {
         if (_queue.isEmpty()) return false
 
         if (repeatMode == RepeatMode.ONE && mediaPlayer != null) {
-            mediaPlayer?.seekTo(0)
-            mediaPlayer?.start()
-            onStateChanged?.invoke(true)
-            startProgressUpdates()
-            return true
+            try {
+                mediaPlayer?.seekTo(0)
+                mediaPlayer?.start()
+                onStateChanged?.invoke(true)
+                startProgressUpdates()
+                return true
+            } catch (e: Exception) {
+                CrashLogger.logPlayerError("AudioPlayer", "Error looping track in Repeat.ONE: ${e.message}", e)
+            }
         }
 
         if (currentIndex < _queue.size - 1) {
@@ -192,10 +228,14 @@ class AudioPlayer {
     }
 
     fun playPrevious(): Boolean {
-        val mp = mediaPlayer
-        if (mp != null && mp.currentPosition > 3000) {
-            mp.seekTo(0)
-            return true
+        val pos = currentPosition
+        if (pos > 3000) {
+            try {
+                mediaPlayer?.seekTo(0)
+                return true
+            } catch (e: Exception) {
+                CrashLogger.logPlayerError("AudioPlayer", "Error rewinding track: ${e.message}", e)
+            }
         }
         if (currentIndex > 0) {
             currentIndex--
@@ -216,6 +256,7 @@ class AudioPlayer {
         originalQueue.clear()
         currentIndex = -1
         isShuffled = false
+        consecutiveErrors = 0
         onQueueChanged?.invoke(_queue, currentIndex)
         onModeChanged?.invoke(isShuffled, repeatMode)
         stop()
@@ -226,17 +267,60 @@ class AudioPlayer {
         val streamUrl = item.streamUrl
         val isRemote = streamUrl != null
 
-        val file = if (!isRemote) File(song.filepath) else null
-        if (!isRemote && (file == null || !file.exists())) {
-            onError?.invoke("File not found: ${song.filepath}")
-            if (hasNext) playNext()
-            return
+        var file = if (!isRemote) File(song.filepath) else null
+        if (!isRemote && (file == null || !file.exists() || !file.isFile)) {
+            val context = CrashLogger.appContext
+            val fallbackFile = if (context != null) {
+                try {
+                    val musicDir = com.aruncs.musicsync.data.AppPreferences(context).musicStorageDirectory
+                    val cand1 = File(musicDir, song.filename)
+                    val cand2 = File(File(musicDir, "ADB"), song.filename)
+                    when {
+                        cand1.exists() && cand1.isFile -> cand1
+                        cand2.exists() && cand2.isFile -> cand2
+                        else -> null
+                    }
+                } catch (ignored: Throwable) {
+                    null
+                }
+            } else null
+
+            if (fallbackFile != null) {
+                file = fallbackFile
+            } else {
+                val err = "File not found on device: ${song.filepath}"
+                CrashLogger.logPlayerError("AudioPlayer", err)
+                onError?.invoke(err)
+                consecutiveErrors++
+                if (consecutiveErrors < MAX_CONSECUTIVE_ERRORS && hasNext) {
+                    handler.post { playNext() }
+                } else if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+                    stop()
+                }
+                return
+            }
         }
 
         stopProgressUpdates()
 
+        // Safely dispose old MediaPlayer instance
         try {
-            mediaPlayer?.release()
+            mediaPlayer?.apply {
+                try {
+                    setOnCompletionListener(null)
+                    setOnErrorListener(null)
+                    setOnPreparedListener(null)
+                    if (isPlaying) stop()
+                } catch (ignored: Exception) {}
+                try { reset() } catch (ignored: Exception) {}
+                try { release() } catch (ignored: Exception) {}
+            }
+        } catch (e: Exception) {
+            CrashLogger.logPlayerError("AudioPlayer", "Error releasing previous MediaPlayer instance: ${e.message}", e)
+        }
+        mediaPlayer = null
+
+        try {
             mediaPlayer = MediaPlayer().apply {
                 setAudioAttributes(
                     AudioAttributes.Builder()
@@ -246,83 +330,157 @@ class AudioPlayer {
                 )
 
                 setOnCompletionListener {
-                    if (!playNext()) {
-                        onStateChanged?.invoke(false)
-                        stopProgressUpdates()
+                    try {
+                        if (!playNext()) {
+                            onStateChanged?.invoke(false)
+                            stopProgressUpdates()
+                        }
+                    } catch (e: Exception) {
+                        CrashLogger.logPlayerError("AudioPlayer", "Error in onCompletion: ${e.message}", e)
                     }
                 }
 
                 setOnErrorListener { _, what, extra ->
-                    onError?.invoke("Playback error ($what, $extra)")
-                    if (hasNext) playNext()
+                    val whatStr = when (what) {
+                        MediaPlayer.MEDIA_ERROR_SERVER_DIED -> "SERVER_DIED"
+                        MediaPlayer.MEDIA_ERROR_UNKNOWN -> "UNKNOWN"
+                        else -> "code $what"
+                    }
+                    val extraStr = when (extra) {
+                        MediaPlayer.MEDIA_ERROR_IO -> "IO_ERROR"
+                        MediaPlayer.MEDIA_ERROR_MALFORMED -> "MALFORMED_STREAM"
+                        MediaPlayer.MEDIA_ERROR_UNSUPPORTED -> "UNSUPPORTED_CODEC"
+                        MediaPlayer.MEDIA_ERROR_TIMED_OUT -> "TIMEOUT"
+                        -2147483648 -> "SYSTEM_ERROR"
+                        else -> "extra $extra"
+                    }
+                    val trackTitle = song.title.ifBlank { song.filename }
+                    val errorDetail = "Playback error ($whatStr, $extraStr) on '$trackTitle' [${if (isRemote) streamUrl else song.filepath}]"
+                    CrashLogger.logPlayerError("AudioPlayer", errorDetail)
+                    onError?.invoke("Playback error: $whatStr ($extraStr)")
+
+                    consecutiveErrors++
+                    if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+                        CrashLogger.logPlayerError("AudioPlayer", "Playback halted: $consecutiveErrors consecutive errors encountered")
+                        stop()
+                    } else if (hasNext) {
+                        handler.post { playNext() }
+                    }
                     true
                 }
 
                 if (isRemote) {
                     setDataSource(streamUrl)
                     setOnPreparedListener { mp ->
-                        mp.start()
-                        currentSong = song
-                        onTrackChanged?.invoke(song)
-                        onStateChanged?.invoke(true)
-                        startProgressUpdates()
+                        try {
+                            mp.start()
+                            consecutiveErrors = 0
+                            currentSong = song
+                            CrashLogger.currentPlayingSong = song
+                            onTrackChanged?.invoke(song)
+                            onStateChanged?.invoke(true)
+                            startProgressUpdates()
+                        } catch (e: Exception) {
+                            CrashLogger.logPlayerError("AudioPlayer", "Failed to start playback after prepareAsync: ${e.message}", e)
+                            onError?.invoke("Playback start failed: ${e.message}")
+                        }
                     }
                     prepareAsync()
                 } else {
                     setDataSource(file!!.absolutePath)
                     prepare()
                     start()
+                    consecutiveErrors = 0
                     currentSong = song
+                    CrashLogger.currentPlayingSong = song
                     onTrackChanged?.invoke(song)
                     onStateChanged?.invoke(true)
                     startProgressUpdates()
                 }
             }
         } catch (e: Exception) {
-            e.printStackTrace()
+            val trackName = song.title.ifBlank { song.filename }
+            CrashLogger.logPlayerError("AudioPlayer", "Exception initializing MediaPlayer for '$trackName': ${e.message}", e)
             onError?.invoke("Playback error: ${e.message}")
+            consecutiveErrors++
+            if (consecutiveErrors < MAX_CONSECUTIVE_ERRORS && hasNext) {
+                handler.post { playNext() }
+            }
         }
     }
 
     fun togglePlayPause() {
         val mp = mediaPlayer ?: return
-        if (mp.isPlaying) {
-            mp.pause()
-            stopProgressUpdates()
-            onStateChanged?.invoke(false)
-        } else {
-            mp.start()
-            startProgressUpdates()
-            onStateChanged?.invoke(true)
+        try {
+            val playing = try { mp.isPlaying } catch (e: Exception) { false }
+            if (playing) {
+                mp.pause()
+                stopProgressUpdates()
+                onStateChanged?.invoke(false)
+            } else {
+                mp.start()
+                startProgressUpdates()
+                onStateChanged?.invoke(true)
+            }
+        } catch (e: Exception) {
+            CrashLogger.logPlayerError("AudioPlayer", "Error toggling play/pause: ${e.message}", e)
+            onError?.invoke("Playback control error: ${e.message}")
         }
     }
 
     fun seekTo(ratio: Float) {
         val mp = mediaPlayer ?: return
-        val targetMs = (mp.duration * ratio.coerceIn(0f, 1f)).toInt()
-        mp.seekTo(targetMs)
+        try {
+            val dur = mp.duration
+            if (dur > 0) {
+                val targetMs = (dur * ratio.coerceIn(0f, 1f)).toInt()
+                mp.seekTo(targetMs)
+            }
+        } catch (e: Exception) {
+            CrashLogger.logPlayerError("AudioPlayer", "Error seeking: ${e.message}", e)
+        }
     }
 
     fun stop() {
         stopProgressUpdates()
         try {
-            mediaPlayer?.stop()
-            mediaPlayer?.release()
-        } catch (ignored: Exception) {}
-        mediaPlayer = null
-        currentSong = null
-        onStateChanged?.invoke(false)
+            mediaPlayer?.apply {
+                try {
+                    setOnCompletionListener(null)
+                    setOnErrorListener(null)
+                    setOnPreparedListener(null)
+                    if (isPlaying) stop()
+                } catch (ignored: Exception) {}
+                try { reset() } catch (ignored: Exception) {}
+                try { release() } catch (ignored: Exception) {}
+            }
+        } catch (e: Exception) {
+            CrashLogger.logPlayerError("AudioPlayer", "Error during stop/release: ${e.message}", e)
+        } finally {
+            mediaPlayer = null
+            currentSong = null
+            CrashLogger.currentPlayingSong = null
+            onStateChanged?.invoke(false)
+        }
     }
 
     private fun startProgressUpdates() {
         stopProgressUpdates()
         progressRunnable = object : Runnable {
             override fun run() {
-                mediaPlayer?.let { mp ->
-                    if (mp.isPlaying) {
+                val mp = mediaPlayer
+                if (mp != null) {
+                    val playing = try { mp.isPlaying } catch (e: Exception) { false }
+                    if (playing) {
                         try {
-                            onProgress?.invoke(mp.currentPosition, mp.duration)
-                        } catch (ignored: Exception) {}
+                            val cur = mp.currentPosition
+                            val dur = mp.duration
+                            if (dur > 0) {
+                                onProgress?.invoke(cur, dur)
+                            }
+                        } catch (e: Exception) {
+                            CrashLogger.logPlayerError("AudioPlayer", "Error reading playback progress: ${e.message}", e)
+                        }
                         handler.postDelayed(this, 500)
                     }
                 }

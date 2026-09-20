@@ -52,16 +52,17 @@
             android:layout_height="wrap_content"
             android:layout_marginStart="8dp"
             android:background="@drawable/bg_button_dark"
+            android:clickable="true"
+            android:focusable="true"
+            android:gravity="center_vertical"
             android:paddingStart="10dp"
             android:paddingTop="4dp"
             android:paddingEnd="10dp"
             android:paddingBottom="4dp"
-            android:text="🔍 Resolve"
+            android:text="Resolve"
             android:textColor="@color/yellow_primary"
             android:textSize="11sp"
-            android:textStyle="bold"
-            android:clickable="true"
-            android:focusable="true" />
+            android:textStyle="bold" />
 
     </LinearLayout>
 

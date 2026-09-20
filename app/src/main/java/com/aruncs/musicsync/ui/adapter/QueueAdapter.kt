@@ -15,10 +15,16 @@ class QueueAdapter(
 ) : RecyclerView.Adapter<QueueAdapter.QueueViewHolder>() {
 
     private var items: List<PlayableItem> = emptyList()
+    private var startIndexOffset: Int = 0
     private var currentIndex: Int = -1
 
     fun submitQueue(queue: List<PlayableItem>, activeIndex: Int) {
-        this.items = queue
+        // Window the queue to max 50 upcoming tracks starting from active index.
+        // This avoids inflating thousands of Views inside NestedScrollView which freezes UI and causes ANRs.
+        val start = activeIndex.coerceAtLeast(0)
+        val end = minOf(queue.size, start + 50)
+        this.items = if (queue.isNotEmpty() && start < queue.size) queue.subList(start, end) else emptyList()
+        this.startIndexOffset = start
         this.currentIndex = activeIndex
         notifyDataSetChanged()
     }
@@ -41,10 +47,11 @@ class QueueAdapter(
         private val ivNowPlaying: ImageView = itemView.findViewById(R.id.iv_queue_now_playing)
 
         fun bind(item: PlayableItem, position: Int) {
+            val actualIndex = startIndexOffset + position
             val song = item.song
-            val isActive = position == currentIndex
+            val isActive = actualIndex == currentIndex
 
-            tvIndex.text = "${position + 1}"
+            tvIndex.text = "${actualIndex + 1}"
             tvTitle.text = song.title.ifBlank { song.filename }
             tvArtist.text = song.artist.ifBlank { "Unknown Artist" }
 
@@ -59,7 +66,7 @@ class QueueAdapter(
             }
 
             itemView.setOnClickListener {
-                onItemClick(position)
+                onItemClick(actualIndex)
             }
         }
     }

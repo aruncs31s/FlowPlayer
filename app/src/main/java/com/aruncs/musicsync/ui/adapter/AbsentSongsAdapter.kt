@@ -83,18 +83,18 @@ class AbsentSongsAdapter(
             // Reset panel state on rebind
             isPanelOpen = false
             layoutResolvePanel.visibility = View.GONE
-            btnResolve.text = "🔍 Resolve"
+            btnResolve.text = "Resolve"
 
             btnResolve.setOnClickListener {
                 if (isPanelOpen) {
                     // Collapse
                     layoutResolvePanel.visibility = View.GONE
-                    btnResolve.text = "🔍 Resolve"
+                    btnResolve.text = "Resolve"
                     isPanelOpen = false
                 } else {
                     // Expand and search
                     layoutResolvePanel.visibility = View.VISIBLE
-                    btnResolve.text = "▲ Close"
+                    btnResolve.text = "Close"
                     isPanelOpen = true
                     doResolveSearch(item, localSongs, onUseMatch)
                 }
@@ -133,9 +133,9 @@ class AbsentSongsAdapter(
                 btnUse.setOnClickListener {
                     onUseMatch(item, song)
                     // Mark as resolved in UI
-                    btnUse.text = "✓ Used"
+                    btnUse.text = "Used"
                     btnUse.isEnabled = false
-                    btnResolve.text = "✓ Resolved"
+                    btnResolve.text = "Resolved"
                     tvTitle.paintFlags = tvTitle.paintFlags or android.graphics.Paint.STRIKE_THRU_TEXT_FLAG
                 }
 

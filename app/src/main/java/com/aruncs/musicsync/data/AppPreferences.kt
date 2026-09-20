@@ -35,9 +35,11 @@ class AppPreferences(context: Context) {
     val musicStorageDirectory: File
         get() {
             val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)
-            if (!dir.exists()) {
-                dir.mkdirs()
-            }
+            try {
+                if (!dir.exists()) {
+                    dir.mkdirs()
+                }
+            } catch (ignored: Throwable) {}
             return dir
         }
 }

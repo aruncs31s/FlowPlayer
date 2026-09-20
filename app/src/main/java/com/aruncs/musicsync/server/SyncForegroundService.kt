@@ -35,7 +35,9 @@ class SyncForegroundService : Service() {
         var onStateChanged: ((Boolean, String?) -> Unit)? = null
 
         fun log(msg: String) {
-            onLogReceived?.invoke(msg)
+            try {
+                onLogReceived?.invoke(msg)
+            } catch (ignored: Throwable) {}
         }
     }
 

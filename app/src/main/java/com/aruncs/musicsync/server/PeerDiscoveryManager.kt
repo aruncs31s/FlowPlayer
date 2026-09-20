@@ -11,6 +11,18 @@ import java.net.DatagramSocket
 import java.net.InetAddress
 import java.net.SocketTimeoutException
 
+data class DiscoveredPeer(
+    val ip: String,
+    val port: Int,
+    val hostname: String,
+    val role: String // "android" or "desktop"
+) {
+    val isAndroid: Boolean get() = role.equals("android", ignoreCase = true)
+    val isDesktop: Boolean get() = role.equals("desktop", ignoreCase = true)
+    val displayName: String
+        get() = if (isAndroid) "$hostname (Phone)" else "$hostname (Desktop)"
+}
+
 object PeerDiscoveryManager {
 
     private const val DISCOVERY_PORT = 5005
@@ -19,6 +31,91 @@ object PeerDiscoveryManager {
     private var multicastLock: WifiManager.MulticastLock? = null
     private var isListening = false
     private var listenerThread: Thread? = null
+
+    /**
+     * Broadcast a discovery probe on Wi-Fi / Hotspot to discover both Android and Desktop peers.
+     */
+    suspend fun discoverAllPeers(
+        context: Context,
+        timeoutMs: Long = 3000,
+        onPeerFound: ((DiscoveredPeer) -> Unit)? = null,
+        onLog: ((String) -> Unit)? = null
+    ): List<DiscoveredPeer> = withContext(Dispatchers.IO) {
+        acquireMulticastLock(context)
+        val peerList = mutableListOf<DiscoveredPeer>()
+        val seenAddresses = mutableSetOf<String>()
+        val localIp = NetworkUtils.getWifiIpAddress(context)
+        var socket: DatagramSocket? = null
+
+        try {
+            socket = DatagramSocket().apply {
+                broadcast = true
+                soTimeout = 700
+            }
+
+            val prefs = AppPreferences(context)
+            val model = NetworkUtils.getDeviceModel()
+
+            val probe = JSONObject().apply {
+                put("magic", MAGIC_HEADER)
+                put("cmd", "DISCOVER")
+                put("role", "android")
+                put("hostname", model)
+                put("port", prefs.serverPort)
+            }.toString().toByteArray(Charsets.UTF_8)
+
+            val broadcastAddr = InetAddress.getByName("255.255.255.255")
+            val packet = DatagramPacket(probe, probe.size, broadcastAddr, DISCOVERY_PORT)
+
+            onLog?.invoke("[DISCOVERY] Broadcasting UDP discovery probe on port $DISCOVERY_PORT...")
+            socket.send(packet)
+
+            val startTime = System.currentTimeMillis()
+            val buf = ByteArray(2048)
+
+            while (System.currentTimeMillis() - startTime < timeoutMs) {
+                try {
+                    val recvPacket = DatagramPacket(buf, buf.size)
+                    socket.receive(recvPacket)
+
+                    val senderIp = recvPacket.address.hostAddress ?: continue
+                    if (senderIp == localIp || senderIp == "127.0.0.1") continue
+
+                    val text = String(recvPacket.data, 0, recvPacket.length, Charsets.UTF_8)
+                    val json = JSONObject(text)
+
+                    if (json.optString("magic") == MAGIC_HEADER) {
+                        val role = json.optString("role", "peer")
+                        val port = json.optInt("port", 5000)
+                        val defaultHost = if (role == "desktop") "Desktop" else "Android Device"
+                        val hostname = json.optString("hostname", defaultHost)
+
+                        val key = "$senderIp:$port"
+                        if (!seenAddresses.contains(key)) {
+                            seenAddresses.add(key)
+                            val peer = DiscoveredPeer(senderIp, port, hostname, role)
+                            peerList.add(peer)
+                            onLog?.invoke("[DISCOVERY] Discovered $role '$hostname' at $senderIp:$port")
+                            onPeerFound?.invoke(peer)
+                        }
+                    }
+                } catch (e: SocketTimeoutException) {
+                    if (System.currentTimeMillis() - startTime < timeoutMs / 2) {
+                        try { socket.send(packet) } catch (ignored: Exception) {}
+                    }
+                } catch (e: Exception) {
+                    break
+                }
+            }
+        } catch (e: Exception) {
+            onLog?.invoke("[DISCOVERY] Discovery error: ${e.message}")
+        } finally {
+            try { socket?.close() } catch (ignored: Exception) {}
+            releaseMulticastLock()
+        }
+
+        peerList
+    }
 
     private fun acquireMulticastLock(context: Context) {
         try {

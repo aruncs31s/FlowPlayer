@@ -1,14 +1,18 @@
 package com.aruncs.musicsync.data
 
+import android.content.ContentValues
 import android.content.Context
 import android.content.SharedPreferences
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
 import com.aruncs.musicsync.model.Playlist
 import com.aruncs.musicsync.model.Song
 import org.json.JSONArray
 import java.io.File
 import java.util.Locale
 
-class PlaylistManager(context: Context) {
+class PlaylistManager(private val context: Context) {
 
     private val prefs: SharedPreferences =
         context.getSharedPreferences("music_sync_playlists", Context.MODE_PRIVATE)
@@ -205,6 +209,78 @@ class PlaylistManager(context: Context) {
 
         return playlist.trackFilepaths.mapNotNull { path ->
             songMap[path] ?: songFilenameMap[File(path).name.lowercase(Locale.US)]
+        }
+    }
+
+    fun exportM3u8Playlist(playlist: Playlist, baseDir: File? = null): File? {
+        return try {
+            val appPrefs = AppPreferences(context)
+            val musicDir = baseDir ?: appPrefs.musicStorageDirectory
+            val playlistDir = File(musicDir, "Playlists")
+            try {
+                if (!playlistDir.exists()) playlistDir.mkdirs()
+            } catch (ignored: Throwable) {}
+
+            val safeName = playlist.name.replace(Regex("""[\\/:*?"<>|]"""), "_")
+            val m3uFile = File(playlistDir, "$safeName.m3u8")
+
+            val allSongs = MediaStoreHelper.getAllDeviceSongs(context)
+            val playlistSongs = getPlaylistSongs(playlist, allSongs)
+
+            val content = buildString {
+                append("#EXTM3U\n")
+                append("#PLAYLIST:${playlist.name}\n")
+                for (s in playlistSongs) {
+                    val durationSec = s.durationSec.toInt()
+                    append("#EXTINF:$durationSec,${s.artist} - ${s.title}\n")
+                    if (s.filepath.startsWith(musicDir.absolutePath)) {
+                        append(s.filepath.removePrefix(musicDir.absolutePath).removePrefix("/"))
+                    } else {
+                        append(s.filepath)
+                    }
+                    append("\n")
+                }
+            }
+
+            val hasAllFilesAccess = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                Environment.isExternalStorageManager()
+            } else {
+                true
+            }
+
+            if (hasAllFilesAccess) {
+                m3uFile.bufferedWriter(Charsets.UTF_8).use { out ->
+                    out.write(content)
+                }
+                MediaScannerHelper.scanFile(context, m3uFile.absolutePath)
+                m3uFile
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val resolver = context.contentResolver
+                val values = ContentValues().apply {
+                    put(MediaStore.MediaColumns.DISPLAY_NAME, "$safeName.m3u8")
+                    put(MediaStore.MediaColumns.MIME_TYPE, "audio/x-mpegurl")
+                    put(MediaStore.MediaColumns.RELATIVE_PATH, "${Environment.DIRECTORY_MUSIC}/Playlists/")
+                }
+                val uri = resolver.insert(MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY), values)
+                if (uri != null) {
+                    resolver.openOutputStream(uri)?.use { out ->
+                        out.write(content.toByteArray(Charsets.UTF_8))
+                    }
+                } else {
+                    m3uFile.bufferedWriter(Charsets.UTF_8).use { it.write(content) }
+                }
+                MediaScannerHelper.scanFile(context, m3uFile.absolutePath)
+                m3uFile
+            } else {
+                m3uFile.bufferedWriter(Charsets.UTF_8).use { out ->
+                    out.write(content)
+                }
+                MediaScannerHelper.scanFile(context, m3uFile.absolutePath)
+                m3uFile
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
         }
     }
 

@@ -1,14 +1,21 @@
 package com.aruncs.musicsync
 
 import android.Manifest
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.os.Environment
+import android.provider.Settings
 import android.text.Editable
 import android.text.TextWatcher
 import android.view.LayoutInflater
 import android.view.View
+import android.view.ViewGroup
+import androidx.viewpager2.widget.ViewPager2
 import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
@@ -35,7 +42,10 @@ import com.aruncs.musicsync.data.PlaylistManager
 import com.aruncs.musicsync.model.Playlist
 import com.aruncs.musicsync.model.Song
 import com.aruncs.musicsync.player.AudioPlayer
+import com.aruncs.musicsync.player.AudioInfoHelper
 import com.aruncs.musicsync.player.PlayableItem
+import com.google.android.material.bottomsheet.BottomSheetBehavior
+import com.google.android.material.bottomsheet.BottomSheetDialog
 import com.aruncs.musicsync.server.NetworkUtils
 import com.aruncs.musicsync.server.PeerDiscoveryManager
 import com.aruncs.musicsync.server.SyncForegroundService
@@ -53,6 +63,7 @@ import java.io.File
 import java.net.URLEncoder
 import java.util.Locale
 import android.net.Uri
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import com.aruncs.musicsync.data.PowerampImporter
 import com.aruncs.musicsync.data.PowerampImportReport
@@ -72,19 +83,22 @@ class MainActivity : AppCompatActivity() {
         uri?.let { importPowerampBackup(it) }
     }
 
-    // Container for active tab view
-    private lateinit var layoutContent: FrameLayout
+    // ViewPager2 for tab views
+    private lateinit var viewPager: ViewPager2
     private lateinit var tvMainIpBadge: TextView
 
-    // Bottom Navigation (4 Tabs: Sync, Library, Playlists, Logs)
+    // Bottom Navigation (5 Tabs: Sync, Library, Player, Playlists, Logs)
     private lateinit var navTabSync: LinearLayout
     private lateinit var navTabLibrary: LinearLayout
+    private lateinit var navTabPlayer: LinearLayout
     private lateinit var navTabPlaylists: LinearLayout
     private lateinit var navTabLogs: LinearLayout
     private lateinit var ivTabSync: ImageView
     private lateinit var tvTabSync: TextView
     private lateinit var ivTabLibrary: ImageView
     private lateinit var tvTabLibrary: TextView
+    private lateinit var ivTabPlayer: ImageView
+    private lateinit var tvTabPlayer: TextView
     private lateinit var ivTabPlaylists: ImageView
     private lateinit var tvTabPlaylists: TextView
     private lateinit var ivTabLogs: ImageView
@@ -108,8 +122,43 @@ class MainActivity : AppCompatActivity() {
     // Cached views for tabs
     private lateinit var syncView: View
     private lateinit var libraryView: View
+    private lateinit var playerView: View
     private lateinit var playlistsView: View
     private lateinit var logsView: View
+
+    // Main Player Screen Views (fragment_player)
+    private var layoutFpEmpty: View? = null
+    private var btnFpEmptyBrowse: View? = null
+    private var layoutFpActive: View? = null
+    private var tvFpQueuePos: TextView? = null
+    private var btnFpInfo: ImageButton? = null
+    private var btnFpQueueToggle: ImageButton? = null
+    private var layoutFpAlbumArt: FrameLayout? = null
+    private var ivFpArtwork: ImageView? = null
+    private var layoutFpSongInfo: LinearLayout? = null
+    private var tvFpTitle: TextView? = null
+    private var tvFpArtist: TextView? = null
+    private var tvFpAlbum: TextView? = null
+    private var tvFpBadgeFormat: TextView? = null
+    private var tvFpBadgeBitrate: TextView? = null
+    private var tvFpBadgeSamplerate: TextView? = null
+    private var tvFpBadgeSource: TextView? = null
+    private var fpSeekbar: SeekBar? = null
+    private var tvFpCurrentTime: TextView? = null
+    private var tvFpTotalTime: TextView? = null
+    private var btnFpShuffle: ImageButton? = null
+    private var btnFpPrev: ImageButton? = null
+    private var btnFpPlayPause: ImageButton? = null
+    private var btnFpNext: ImageButton? = null
+    private var btnFpRepeat: ImageButton? = null
+    private var btnFpLike: ImageButton? = null
+    private var btnFpAddPlaylist: ImageButton? = null
+    private var btnFpDownload: ImageButton? = null
+    private var btnFpAudioInfo: TextView? = null
+    private var btnFpOptions: ImageButton? = null
+    private var tvFpQueueCount: TextView? = null
+    private var rvFpQueue: RecyclerView? = null
+    private lateinit var fpQueueAdapter: QueueAdapter
 
     // Sync Tab Views
     private var badgeServerStatus: TextView? = null
@@ -120,6 +169,10 @@ class MainActivity : AppCompatActivity() {
     private var btnAutoDiscover: Button? = null
     private var btnPingDesktop: Button? = null
     private var tvDesktopStatus: TextView? = null
+    private var layoutSyncDevicesList: LinearLayout? = null
+    private var badgeDevicesCount: TextView? = null
+    private var pbDevicesScanning: ProgressBar? = null
+    private val discoveredSyncDevices = mutableListOf<com.aruncs.musicsync.server.DiscoveredPeer>()
     private var btnSyncPull: Button? = null
     private var btnSyncPush: Button? = null
     private var layoutSyncProgress: LinearLayout? = null
@@ -160,32 +213,55 @@ class MainActivity : AppCompatActivity() {
     private var btnDetailBack: TextView? = null
     private var tvDetailPlaylistName: TextView? = null
     private var btnDetailPlayAll: TextView? = null
+    private var btnDetailSyncPlaylist: TextView? = null
     private var tvDetailEmpty: TextView? = null
     private var rvPlaylistTracks: RecyclerView? = null
     private lateinit var playlistsAdapter: PlaylistsAdapter
     private lateinit var playlistDetailAdapter: SongsAdapter
 
+    // Peer Selector Views (Playlists Tab)
+    private var layoutPeerSelectorBar: LinearLayout? = null
+    private var tvActivePeerInfo: TextView? = null
+    private var btnChangePeer: TextView? = null
+    private var activePeerIp: String? = null
+    private var activePeerPort: Int? = null
+    private var activePeerName: String? = null
+
     // Logs Tab Views
     private var rvLogs: RecyclerView? = null
     private var btnLogsClear: Button? = null
+    private var btnLogsCrash: Button? = null
     private val logAdapter = LogAdapter()
 
     private var currentTab = TAB_SYNC
     private var libraryMode = MODE_LOCAL
     private var playlistMode = MODE_LOCAL
     private var localSongs: List<Song> = emptyList()
+        set(value) {
+            field = value
+            localSongMap = value.associateBy { it.filename.lowercase(Locale.US) }
+        }
+    private var localSongMap: Map<String, Song> = emptyMap()
     private var remoteSongs: List<Song> = emptyList()
     private var localPlaylists: List<Playlist> = emptyList()
     private var remotePlaylists: List<Playlist> = emptyList()
     private var selectedPlaylist: Playlist? = null
     private var playlistTracks: List<Song> = emptyList()
 
+    // Now Playing & Audio Info Dialog
+    private var nowPlayingDialog: BottomSheetDialog? = null
+    private var nowPlayingUpdateCallback: ((Song) -> Unit)? = null
+    private var nowPlayingStateCallback: ((Boolean) -> Unit)? = null
+    private var nowPlayingProgressCallback: ((Int, Int) -> Unit)? = null
+    private var nowPlayingModeCallback: ((Boolean, RepeatMode) -> Unit)? = null
+
     companion object {
         private const val PERMISSION_REQUEST_CODE = 2001
         private const val TAB_SYNC = 0
         private const val TAB_LIBRARY = 1
-        private const val TAB_PLAYLISTS = 2
-        private const val TAB_LOGS = 3
+        private const val TAB_PLAYER = 2
+        private const val TAB_PLAYLISTS = 3
+        private const val TAB_LOGS = 4
         private const val MODE_LOCAL = 0
         private const val MODE_REMOTE = 1
     }
@@ -193,6 +269,14 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        com.aruncs.musicsync.data.CrashLogger.init(applicationContext)
+        com.aruncs.musicsync.data.CrashLogger.onPlayerErrorLogged = { logMsg ->
+            runOnUiThread {
+                logAdapter.addLog(logMsg)
+                rvLogs?.scrollToPosition(logAdapter.itemCount - 1)
+            }
+        }
 
         prefs = AppPreferences(this)
         syncManager = SyncManager(this)
@@ -206,6 +290,11 @@ class MainActivity : AppCompatActivity() {
         updateServerStatusUI(SyncForegroundService.isRunning, null)
         refreshIpBadge()
 
+        val prevCrash = com.aruncs.musicsync.data.CrashLogger.checkAndClearPreviousCrash(this)
+        if (prevCrash != null) {
+            logAdapter.addLog("[CRASH DETECTED] Previous crash: $prevCrash (Tap 'Crash Dump' in Logs tab for details)")
+        }
+
         if (NetworkUtils.isWifiConnected(this)) {
             autoDiscoverDesktop(showToast = false)
         }
@@ -213,15 +302,29 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread { logAdapter.addLog(logMsg) }
         }
 
-        switchTab(TAB_SYNC)
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (layoutPlaylistDetail?.visibility == View.VISIBLE) {
+                    closePlaylistDetail()
+                } else if (viewPager.currentItem != TAB_SYNC) {
+                    switchTab(TAB_SYNC)
+                } else {
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                }
+            }
+        })
+
+        switchTab(TAB_SYNC, smoothScroll = false)
     }
 
     private fun initViews() {
-        layoutContent = findViewById(R.id.layout_content)
+        viewPager = findViewById(R.id.view_pager)
         tvMainIpBadge = findViewById(R.id.tv_main_ip_badge)
 
         navTabSync = findViewById(R.id.nav_tab_sync)
         navTabLibrary = findViewById(R.id.nav_tab_library)
+        navTabPlayer = findViewById(R.id.nav_tab_player)
         navTabPlaylists = findViewById(R.id.nav_tab_playlists)
         navTabLogs = findViewById(R.id.nav_tab_logs)
 
@@ -229,6 +332,8 @@ class MainActivity : AppCompatActivity() {
         tvTabSync = findViewById(R.id.tv_tab_sync)
         ivTabLibrary = findViewById(R.id.iv_tab_library)
         tvTabLibrary = findViewById(R.id.tv_tab_library)
+        ivTabPlayer = findViewById(R.id.iv_tab_player)
+        tvTabPlayer = findViewById(R.id.tv_tab_player)
         ivTabPlaylists = findViewById(R.id.iv_tab_playlists)
         tvTabPlaylists = findViewById(R.id.tv_tab_playlists)
         ivTabLogs = findViewById(R.id.iv_tab_logs)
@@ -253,7 +358,7 @@ class MainActivity : AppCompatActivity() {
         val inflater = LayoutInflater.from(this)
 
         // 1. Sync View
-        syncView = inflater.inflate(R.layout.fragment_sync, layoutContent, false)
+        syncView = inflater.inflate(R.layout.fragment_sync, viewPager, false)
         badgeServerStatus = syncView.findViewById(R.id.badge_server_status)
         tvServerAddress = syncView.findViewById(R.id.tv_server_address)
         btnToggleServer = syncView.findViewById(R.id.btn_toggle_server)
@@ -262,6 +367,9 @@ class MainActivity : AppCompatActivity() {
         btnAutoDiscover = syncView.findViewById(R.id.btn_auto_discover)
         btnPingDesktop = syncView.findViewById(R.id.btn_ping_desktop)
         tvDesktopStatus = syncView.findViewById(R.id.tv_desktop_status)
+        layoutSyncDevicesList = syncView.findViewById(R.id.layout_sync_devices_list)
+        badgeDevicesCount = syncView.findViewById(R.id.badge_devices_count)
+        pbDevicesScanning = syncView.findViewById(R.id.pb_devices_scanning)
         btnSyncPull = syncView.findViewById(R.id.btn_sync_pull)
         btnSyncPush = syncView.findViewById(R.id.btn_sync_push)
         layoutSyncProgress = syncView.findViewById(R.id.layout_sync_progress)
@@ -272,9 +380,10 @@ class MainActivity : AppCompatActivity() {
 
         etDesktopIp?.setText(prefs.desktopIp)
         etDesktopPort?.setText(prefs.desktopPort.toString())
+        renderSyncDevicesList()
 
         // 2. Library View
-        libraryView = inflater.inflate(R.layout.fragment_library, layoutContent, false)
+        libraryView = inflater.inflate(R.layout.fragment_library, viewPager, false)
         rvLibrarySongs = libraryView.findViewById(R.id.rv_library_songs)
         swipeRefreshLibrary = libraryView.findViewById(R.id.swipe_refresh_library)
         etLibrarySearch = libraryView.findViewById(R.id.et_library_search)
@@ -302,8 +411,7 @@ class MainActivity : AppCompatActivity() {
                     val displayed = songsAdapter.getDisplayedSongs()
                     val startIndex = displayed.indexOfFirst { it.id == song.id }.coerceAtLeast(0)
                     val items = displayed.map { s ->
-                        val url = if (libraryMode == MODE_REMOTE) getStreamUrl(s) else null
-                        PlayableItem(s, url)
+                        createPlayableItem(s, libraryMode == MODE_REMOTE)
                     }
                     audioPlayer.setQueue(items, startIndex)
                 }
@@ -315,8 +423,8 @@ class MainActivity : AppCompatActivity() {
                 confirmDeleteSong(song)
             },
             onAddToQueueClick = { song ->
-                val url = if (libraryMode == MODE_REMOTE) getStreamUrl(song) else null
-                audioPlayer.addToQueue(song, url)
+                val item = createPlayableItem(song, libraryMode == MODE_REMOTE)
+                audioPlayer.addToQueue(item.song, item.streamUrl)
                 Toast.makeText(this@MainActivity, "Added to queue: ${song.title}", Toast.LENGTH_SHORT).show()
                 logAdapter.addLog("[QUEUE] Added '${song.title}' to playback queue")
             },
@@ -330,14 +438,61 @@ class MainActivity : AppCompatActivity() {
         rvLibrarySongs?.layoutManager = LinearLayoutManager(this)
         rvLibrarySongs?.adapter = songsAdapter
 
-        // 3. Playlists View
-        playlistsView = inflater.inflate(R.layout.fragment_playlists, layoutContent, false)
+        // 3. Player View (Main Player Screen)
+        playerView = inflater.inflate(R.layout.fragment_player, viewPager, false)
+        layoutFpEmpty = playerView.findViewById(R.id.layout_fp_empty)
+        btnFpEmptyBrowse = playerView.findViewById(R.id.btn_fp_empty_browse)
+        layoutFpActive = playerView.findViewById(R.id.layout_fp_active)
+        tvFpQueuePos = playerView.findViewById(R.id.tv_fp_queue_pos)
+        btnFpInfo = playerView.findViewById(R.id.btn_fp_info)
+        btnFpQueueToggle = playerView.findViewById(R.id.btn_fp_queue_toggle)
+        layoutFpAlbumArt = playerView.findViewById(R.id.layout_fp_album_art)
+        ivFpArtwork = playerView.findViewById(R.id.iv_fp_artwork)
+        layoutFpSongInfo = playerView.findViewById(R.id.layout_fp_song_info)
+        tvFpTitle = playerView.findViewById(R.id.tv_fp_title)
+        tvFpArtist = playerView.findViewById(R.id.tv_fp_artist)
+        tvFpAlbum = playerView.findViewById(R.id.tv_fp_album)
+        tvFpBadgeFormat = playerView.findViewById(R.id.tv_fp_badge_format)
+        tvFpBadgeBitrate = playerView.findViewById(R.id.tv_fp_badge_bitrate)
+        tvFpBadgeSamplerate = playerView.findViewById(R.id.tv_fp_badge_samplerate)
+        tvFpBadgeSource = playerView.findViewById(R.id.tv_fp_badge_source)
+        fpSeekbar = playerView.findViewById(R.id.fp_seekbar)
+        tvFpCurrentTime = playerView.findViewById(R.id.tv_fp_current_time)
+        tvFpTotalTime = playerView.findViewById(R.id.tv_fp_total_time)
+        btnFpShuffle = playerView.findViewById(R.id.btn_fp_shuffle)
+        btnFpPrev = playerView.findViewById(R.id.btn_fp_prev)
+        btnFpPlayPause = playerView.findViewById(R.id.btn_fp_play_pause)
+        btnFpNext = playerView.findViewById(R.id.btn_fp_next)
+        btnFpRepeat = playerView.findViewById(R.id.btn_fp_repeat)
+        btnFpLike = playerView.findViewById(R.id.btn_fp_like)
+        btnFpAddPlaylist = playerView.findViewById(R.id.btn_fp_add_playlist)
+        btnFpDownload = playerView.findViewById(R.id.btn_fp_download)
+        btnFpAudioInfo = playerView.findViewById(R.id.btn_fp_audio_info)
+        btnFpOptions = playerView.findViewById(R.id.btn_fp_options)
+        tvFpQueueCount = playerView.findViewById(R.id.tv_fp_queue_count)
+        rvFpQueue = playerView.findViewById(R.id.rv_fp_queue)
+
+        tvFpTitle?.isSelected = true
+
+        fpQueueAdapter = QueueAdapter(
+            onItemClick = { index ->
+                audioPlayer.playTrackAtIndex(index)
+            }
+        )
+        rvFpQueue?.layoutManager = LinearLayoutManager(this)
+        rvFpQueue?.adapter = fpQueueAdapter
+
+        // 4. Playlists View
+        playlistsView = inflater.inflate(R.layout.fragment_playlists, viewPager, false)
         badgePlaylistsCount = playlistsView.findViewById(R.id.badge_playlists_count)
         btnPlaylistImportPoweramp = playlistsView.findViewById(R.id.btn_playlist_import_poweramp)
         btnPlaylistCreate = playlistsView.findViewById(R.id.btn_playlist_create)
         btnPlaylistsRefresh = playlistsView.findViewById(R.id.btn_playlists_refresh)
         btnPlaylistTabLocal = playlistsView.findViewById(R.id.btn_playlist_tab_local)
         btnPlaylistTabRemote = playlistsView.findViewById(R.id.btn_playlist_tab_remote)
+        layoutPeerSelectorBar = playlistsView.findViewById(R.id.layout_peer_selector_bar)
+        tvActivePeerInfo = playlistsView.findViewById(R.id.tv_active_peer_info)
+        btnChangePeer = playlistsView.findViewById(R.id.btn_change_peer)
         layoutPlaylistsMain = playlistsView.findViewById(R.id.layout_playlists_main)
         tvPlaylistsEmpty = playlistsView.findViewById(R.id.tv_playlists_empty)
         swipeRefreshPlaylists = playlistsView.findViewById(R.id.swipe_refresh_playlists)
@@ -345,6 +500,7 @@ class MainActivity : AppCompatActivity() {
         layoutPlaylistDetail = playlistsView.findViewById(R.id.layout_playlist_detail)
         btnDetailBack = playlistsView.findViewById(R.id.btn_detail_back)
         tvDetailPlaylistName = playlistsView.findViewById(R.id.tv_detail_playlist_name)
+        btnDetailSyncPlaylist = playlistsView.findViewById(R.id.btn_detail_sync_playlist)
         btnDetailPlayAll = playlistsView.findViewById(R.id.btn_detail_play_all)
         tvDetailEmpty = playlistsView.findViewById(R.id.tv_detail_empty)
         rvPlaylistTracks = playlistsView.findViewById(R.id.rv_playlist_tracks)
@@ -372,8 +528,7 @@ class MainActivity : AppCompatActivity() {
                 val startIndex = tracks.indexOfFirst { it.filepath == song.filepath }.coerceAtLeast(0)
                 val isRemote = selectedPlaylist?.isRemote == true
                 val items = tracks.map { s ->
-                    val url = if (isRemote) getStreamUrl(s) else null
-                    PlayableItem(s, url)
+                    createPlayableItem(s, isRemote)
                 }
                 audioPlayer.setQueue(items, startIndex)
             },
@@ -384,8 +539,8 @@ class MainActivity : AppCompatActivity() {
             },
             onAddToQueueClick = { song ->
                 val isRemote = selectedPlaylist?.isRemote == true
-                val url = if (isRemote) getStreamUrl(song) else null
-                audioPlayer.addToQueue(song, url)
+                val item = createPlayableItem(song, isRemote)
+                audioPlayer.addToQueue(item.song, item.streamUrl)
                 Toast.makeText(this@MainActivity, "Added to queue: ${song.title}", Toast.LENGTH_SHORT).show()
             },
             onLikeClick = { song ->
@@ -399,12 +554,16 @@ class MainActivity : AppCompatActivity() {
         rvPlaylistTracks?.adapter = playlistDetailAdapter
 
         // 4. Logs View
-        logsView = inflater.inflate(R.layout.fragment_logs, layoutContent, false)
+        logsView = inflater.inflate(R.layout.fragment_logs, viewPager, false)
         rvLogs = logsView.findViewById(R.id.rv_logs)
         btnLogsClear = logsView.findViewById(R.id.btn_logs_clear)
+        btnLogsCrash = logsView.findViewById(R.id.btn_logs_crash)
 
         rvLogs?.layoutManager = LinearLayoutManager(this)
         rvLogs?.adapter = logAdapter
+
+        // Setup ViewPager2 swipe navigation
+        setupViewPager()
     }
 
     private fun setupListeners() {
@@ -417,6 +576,10 @@ class MainActivity : AppCompatActivity() {
         ivTabLibrary.setOnClickListener { android.util.Log.d("NAV_TAB", "ivTabLibrary clicked"); switchTab(TAB_LIBRARY) }
         tvTabLibrary.setOnClickListener { android.util.Log.d("NAV_TAB", "tvTabLibrary clicked"); switchTab(TAB_LIBRARY) }
 
+        navTabPlayer.setOnClickListener { android.util.Log.d("NAV_TAB", "navTabPlayer clicked"); switchTab(TAB_PLAYER) }
+        ivTabPlayer.setOnClickListener { android.util.Log.d("NAV_TAB", "ivTabPlayer clicked"); switchTab(TAB_PLAYER) }
+        tvTabPlayer.setOnClickListener { android.util.Log.d("NAV_TAB", "tvTabPlayer clicked"); switchTab(TAB_PLAYER) }
+
         navTabPlaylists.setOnClickListener { android.util.Log.d("NAV_TAB", "navTabPlaylists clicked"); switchTab(TAB_PLAYLISTS) }
         ivTabPlaylists.setOnClickListener { android.util.Log.d("NAV_TAB", "ivTabPlaylists clicked"); switchTab(TAB_PLAYLISTS) }
         tvTabPlaylists.setOnClickListener { android.util.Log.d("NAV_TAB", "tvTabPlaylists clicked"); switchTab(TAB_PLAYLISTS) }
@@ -424,6 +587,100 @@ class MainActivity : AppCompatActivity() {
         navTabLogs.setOnClickListener { android.util.Log.d("NAV_TAB", "navTabLogs clicked"); switchTab(TAB_LOGS) }
         ivTabLogs.setOnClickListener { android.util.Log.d("NAV_TAB", "ivTabLogs clicked"); switchTab(TAB_LOGS) }
         tvTabLogs.setOnClickListener { android.util.Log.d("NAV_TAB", "tvTabLogs clicked"); switchTab(TAB_LOGS) }
+
+        // Main Player Screen listeners
+        btnFpEmptyBrowse?.setOnClickListener { switchTab(TAB_LIBRARY) }
+        btnFpPlayPause?.setOnClickListener { audioPlayer.togglePlayPause() }
+        btnFpPrev?.setOnClickListener { audioPlayer.playPrevious() }
+        btnFpNext?.setOnClickListener { audioPlayer.playNext() }
+        btnFpShuffle?.setOnClickListener {
+            val s = audioPlayer.toggleShuffle()
+            updateShuffleButton(s)
+            updatePlayerScreenControls()
+            Toast.makeText(this, if (s) "Shuffle On" else "Shuffle Off", Toast.LENGTH_SHORT).show()
+        }
+        btnFpRepeat?.setOnClickListener {
+            val m = audioPlayer.toggleRepeat()
+            updateRepeatButton(m)
+            updatePlayerScreenControls()
+            val msg = when (m) {
+                RepeatMode.OFF -> "Repeat Off"
+                RepeatMode.ALL -> "Repeat All"
+                RepeatMode.ONE -> "Repeat One"
+            }
+            Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+        }
+        btnFpLike?.setOnClickListener {
+            audioPlayer.currentSong?.let { song ->
+                toggleSongLiked(song)
+                updatePlayerScreenLike(song)
+            }
+        }
+        btnFpAddPlaylist?.setOnClickListener {
+            audioPlayer.currentSong?.let { song ->
+                showAddToPlaylistDialog(song)
+            }
+        }
+        btnFpDownload?.setOnClickListener {
+            audioPlayer.currentSong?.let { song ->
+                val ip = getTargetPeerIp()
+                val port = getTargetPeerPort()
+                if (ip.isBlank() || ip == "0.0.0.0") {
+                    Toast.makeText(this, "No peer connected — cannot download", Toast.LENGTH_SHORT).show()
+                } else {
+                    downloadRemoteSong(song)
+                }
+            }
+        }
+        btnFpOptions?.setOnClickListener {
+            audioPlayer.currentSong?.let { song ->
+                showSongOptionsDialog(song)
+            }
+        }
+        btnFpAudioInfo?.setOnClickListener {
+            audioPlayer.currentSong?.let { song ->
+                showAudioInfoDialog(song)
+            }
+        }
+        layoutFpAlbumArt?.setOnClickListener {
+            audioPlayer.currentSong?.let { song ->
+                showAudioInfoDialog(song)
+            }
+        }
+        layoutFpSongInfo?.setOnClickListener {
+            audioPlayer.currentSong?.let { song ->
+                showAudioInfoDialog(song)
+            }
+        }
+        btnFpInfo?.setOnClickListener {
+            audioPlayer.currentSong?.let { song ->
+                showAudioInfoDialog(song)
+            }
+        }
+        btnFpQueueToggle?.setOnClickListener {
+            showQueueDialog()
+        }
+        var pendingFpSeekRatio: Float? = null
+        fpSeekbar?.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (fromUser) {
+                    val ratio = progress.toFloat() / 1000f
+                    pendingFpSeekRatio = ratio
+                    val dur = audioPlayer.duration
+                    if (dur > 0) {
+                        val curMs = (dur * ratio).toInt()
+                        val curMin = curMs / 1000 / 60
+                        val curSec = (curMs / 1000) % 60
+                        tvFpCurrentTime?.text = String.format(Locale.US, "%02d:%02d", curMin, curSec)
+                    }
+                }
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                pendingFpSeekRatio?.let { audioPlayer.seekTo(it) }
+                pendingFpSeekRatio = null
+            }
+        })
 
         // Server Toggle
         btnToggleServer?.setOnClickListener {
@@ -443,10 +700,23 @@ class MainActivity : AppCompatActivity() {
         }
 
         SyncForegroundService.onLogReceived = { logMsg ->
-            runOnUiThread {
-                logAdapter.addLog(logMsg)
-                rvLogs?.scrollToPosition(logAdapter.itemCount - 1)
-            }
+            try {
+                if (!isFinishing && !isDestroyed) {
+                    runOnUiThread {
+                        try {
+                            logAdapter.addLog(logMsg)
+                            val count = logAdapter.itemCount
+                            if (count > 0) {
+                                rvLogs?.post {
+                                    try {
+                                        rvLogs?.scrollToPosition(count - 1)
+                                    } catch (ignored: Throwable) {}
+                                }
+                            }
+                        } catch (t: Throwable) {}
+                    }
+                }
+            } catch (ignored: Throwable) {}
         }
 
         // Desktop Discovery & Ping
@@ -518,13 +788,36 @@ class MainActivity : AppCompatActivity() {
         btnPlaylistCreate?.setOnClickListener { promptCreatePlaylistDialog(playlistMode == MODE_REMOTE) }
         btnPlaylistsRefresh?.setOnClickListener { loadPlaylists() }
         swipeRefreshPlaylists?.setOnRefreshListener { loadPlaylists() }
+        btnChangePeer?.setOnClickListener { showPeerSelectionDialog() }
         btnDetailBack?.setOnClickListener { closePlaylistDetail() }
         btnDetailPlayAll?.setOnClickListener {
             selectedPlaylist?.let { pl -> playPlaylist(pl) }
         }
+        btnDetailSyncPlaylist?.setOnClickListener {
+            selectedPlaylist?.let { pl -> syncRemotePlaylistWithQuality(pl) }
+        }
 
         btnLogsClear?.setOnClickListener {
             logAdapter.clear()
+        }
+
+        btnLogsCrash?.setOnClickListener {
+            val logs = com.aruncs.musicsync.data.CrashLogger.getCrashLogs(this)
+            AlertDialog.Builder(this)
+                .setTitle("Player & Crash Logs")
+                .setMessage(logs)
+                .setPositiveButton("Close", null)
+                .setNeutralButton("Copy Logs") { _, _ ->
+                    val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    val clip = ClipData.newPlainText("Crash Logs", logs)
+                    clipboard.setPrimaryClip(clip)
+                    Toast.makeText(this, "Logs copied to clipboard!", Toast.LENGTH_SHORT).show()
+                }
+                .setNegativeButton("Clear") { _, _ ->
+                    com.aruncs.musicsync.data.CrashLogger.clearLogs(this)
+                    Toast.makeText(this, "Crash logs cleared", Toast.LENGTH_SHORT).show()
+                }
+                .show()
         }
 
         // Save IP / Port on change
@@ -592,22 +885,49 @@ class MainActivity : AppCompatActivity() {
             playerBarContainer.visibility = View.GONE
             songsAdapter.setActiveSong(null, false)
             playlistDetailAdapter.setActiveSong(null, false)
+            updatePlayerScreenUI(null)
+            nowPlayingDialog?.dismiss()
         }
 
+        // Tapping player bar or title/artist opens the Main Player Screen
+        findViewById<View>(R.id.layout_player_track_info)?.setOnClickListener { switchTab(TAB_PLAYER) }
+        tvPlayerTitle?.setOnClickListener { switchTab(TAB_PLAYER) }
+        tvPlayerArtist?.setOnClickListener { switchTab(TAB_PLAYER) }
+        playerBarContainer.setOnClickListener { switchTab(TAB_PLAYER) }
+
+        // Long-pressing player bar or title/artist opens Poweramp Audio Info & Tags directly
+        tvPlayerTitle?.setOnLongClickListener {
+            audioPlayer.currentSong?.let { showAudioInfoDialog(it) }
+            true
+        }
+        tvPlayerArtist?.setOnLongClickListener {
+            audioPlayer.currentSong?.let { showAudioInfoDialog(it) }
+            true
+        }
+        playerBarContainer.setOnLongClickListener {
+            audioPlayer.currentSong?.let { showAudioInfoDialog(it) }
+            true
+        }
+
+        var pendingPlayerSeekRatio: Float? = null
         playerSeekbar?.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
                 if (fromUser) {
-                    val ratio = progress.toFloat() / 1000f
-                    audioPlayer.seekTo(ratio)
+                    pendingPlayerSeekRatio = progress.toFloat() / 1000f
                 }
             }
             override fun onStartTrackingTouch(seekBar: SeekBar?) {}
-            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {
+                pendingPlayerSeekRatio?.let { audioPlayer.seekTo(it) }
+                pendingPlayerSeekRatio = null
+            }
         })
 
         audioPlayer.onTrackChanged = { song ->
             runOnUiThread {
-                playerBarContainer.visibility = View.VISIBLE
+                if (currentTab != TAB_PLAYER) {
+                    playerBarContainer.visibility = View.VISIBLE
+                }
                 tvPlayerTitle?.text = song.title.ifBlank { song.filename }
                 tvPlayerArtist?.text = song.artist.ifBlank { "Unknown Artist" }
                 btnPlayerPlayPause?.setImageResource(R.drawable.ic_pause)
@@ -615,6 +935,8 @@ class MainActivity : AppCompatActivity() {
                 playlistDetailAdapter.setActiveSong(song, true)
                 updatePlayerControlsState()
                 updatePlayerLikeButton(song)
+                updatePlayerScreenUI(song)
+                nowPlayingUpdateCallback?.invoke(song)
             }
         }
 
@@ -625,12 +947,16 @@ class MainActivity : AppCompatActivity() {
                 playlistDetailAdapter.setActiveSong(audioPlayer.currentSong, isPlaying)
                 updatePlayerControlsState()
                 updatePlayerLikeButton(audioPlayer.currentSong)
+                updatePlayerScreenControls()
+                nowPlayingStateCallback?.invoke(isPlaying)
             }
         }
 
         audioPlayer.onQueueChanged = { _, _ ->
             runOnUiThread {
                 updatePlayerControlsState()
+                updatePlayerScreenQueue()
+                audioPlayer.currentSong?.let { nowPlayingUpdateCallback?.invoke(it) }
             }
         }
 
@@ -638,6 +964,8 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread {
                 updateShuffleButton(isShuffled)
                 updateRepeatButton(repeatMode)
+                updatePlayerScreenControls()
+                nowPlayingModeCallback?.invoke(isShuffled, repeatMode)
             }
         }
 
@@ -646,12 +974,16 @@ class MainActivity : AppCompatActivity() {
                 if (totalMs > 0) {
                     val ratio = (currentMs.toFloat() / totalMs.toFloat()) * 1000f
                     playerSeekbar?.progress = ratio.toInt()
+                    fpSeekbar?.progress = ratio.toInt()
 
                     val curMin = currentMs / 1000 / 60
                     val curSec = (currentMs / 1000) % 60
                     val totMin = totalMs / 1000 / 60
                     val totSec = (totalMs / 1000) % 60
                     tvPlayerTime?.text = String.format(Locale.US, "%02d:%02d / %02d:%02d", curMin, curSec, totMin, totSec)
+                    tvFpCurrentTime?.text = String.format(Locale.US, "%02d:%02d", curMin, curSec)
+                    tvFpTotalTime?.text = String.format(Locale.US, "%02d:%02d", totMin, totSec)
+                    nowPlayingProgressCallback?.invoke(currentMs, totalMs)
                 }
             }
         }
@@ -710,9 +1042,159 @@ class MainActivity : AppCompatActivity() {
         btnPlayerNext?.alpha = if (audioPlayer.hasNext) 1.0f else 0.35f
     }
 
-    private fun switchTab(tab: Int) {
+    private fun updatePlayerScreenUI(song: Song?) {
+        if (song == null) {
+            layoutFpEmpty?.visibility = View.VISIBLE
+            layoutFpActive?.visibility = View.GONE
+            return
+        }
+        layoutFpEmpty?.visibility = View.GONE
+        layoutFpActive?.visibility = View.VISIBLE
+
+        val isRemote = audioPlayer.currentItem?.isRemote ?: (libraryMode == MODE_REMOTE)
+        val ext = File(song.filepath).extension.uppercase(Locale.US).ifBlank { "MP3" }
+
+        tvFpTitle?.text = song.title.ifBlank { song.filename }
+        tvFpArtist?.text = song.artist.ifBlank { "Unknown Artist" }
+        tvFpAlbum?.text = if (song.album.isNotBlank() && song.album != "Unknown Album") song.album else "Music Sync Library"
+
+        tvFpBadgeFormat?.text = ext
+        tvFpBadgeBitrate?.text = song.bitrateKbps.ifBlank { "320 kbps" }.replace(" (CBR)", "").replace(" (Lossless)", "")
+        tvFpBadgeSamplerate?.text = "44.1 kHz"
+
+        if (isRemote) {
+            tvFpBadgeSource?.text = "OVER-IP"
+            tvFpBadgeSource?.setTextColor(ContextCompat.getColor(this, R.color.yellow_primary))
+            tvFpBadgeSource?.setBackgroundResource(R.drawable.bg_badge_yellow)
+            // Show download button; dim it if already saved locally
+            val alreadyLocal = localSongMap.containsKey(song.filename.lowercase(Locale.US)) ||
+                    localSongs.any { it.filename.equals(song.filename, ignoreCase = true) }
+            btnFpDownload?.visibility = View.VISIBLE
+            if (alreadyLocal) {
+                btnFpDownload?.setColorFilter(ContextCompat.getColor(this, R.color.status_online))
+                btnFpDownload?.contentDescription = "Already on Device"
+                btnFpDownload?.alpha = 0.55f
+            } else {
+                btnFpDownload?.setColorFilter(ContextCompat.getColor(this, R.color.yellow_primary))
+                btnFpDownload?.contentDescription = "Download to Device"
+                btnFpDownload?.alpha = 1.0f
+            }
+        } else {
+            tvFpBadgeSource?.text = "LOCAL"
+            tvFpBadgeSource?.setTextColor(ContextCompat.getColor(this, R.color.status_online))
+            tvFpBadgeSource?.setBackgroundResource(R.drawable.bg_badge_green)
+            btnFpDownload?.visibility = View.GONE
+        }
+
+        updatePlayerScreenQueue()
+        updatePlayerScreenLike(song)
+        updatePlayerScreenControls()
+
+        // Asynchronously enrich audio technical details in background without blocking main thread
+        lifecycleScope.launch(Dispatchers.IO) {
+            val streamUrl = if (isRemote) getStreamUrl(song) else null
+            val details = AudioInfoHelper.extract(song, streamUrl)
+            withContext(Dispatchers.Main) {
+                if (audioPlayer.currentSong?.id == song.id) {
+                    tvFpBadgeFormat?.text = details.containerFormat
+                    tvFpBadgeBitrate?.text = details.bitrateKbps.replace(" (CBR)", "").replace(" (Lossless)", "")
+                    tvFpBadgeSamplerate?.text = if (details.sampleRateHz.contains("(")) {
+                        details.sampleRateHz.substringAfter("(").substringBefore(")")
+                    } else {
+                        details.sampleRateHz
+                    }
+                }
+            }
+        }
+    }
+
+    private fun updatePlayerScreenQueue() {
+        val q = audioPlayer.queue
+        val qIdx = audioPlayer.currentIndex
+        if (q.isNotEmpty() && qIdx >= 0) {
+            tvFpQueuePos?.text = "Track ${qIdx + 1} of ${q.size}"
+            tvFpQueueCount?.text = "${q.size} tracks"
+        } else {
+            tvFpQueuePos?.text = "Now Playing"
+            tvFpQueueCount?.text = "0 tracks"
+        }
+        fpQueueAdapter.submitQueue(q, qIdx)
+    }
+
+    private fun updatePlayerScreenControls() {
+        btnFpPlayPause?.setImageResource(if (audioPlayer.isPlaying) R.drawable.ic_pause else R.drawable.ic_play)
+        btnFpShuffle?.setColorFilter(if (audioPlayer.isShuffled) ContextCompat.getColor(this, R.color.yellow_primary) else ContextCompat.getColor(this, R.color.text_muted))
+        when (audioPlayer.repeatMode) {
+            RepeatMode.OFF -> {
+                btnFpRepeat?.setImageResource(R.drawable.ic_repeat)
+                btnFpRepeat?.setColorFilter(ContextCompat.getColor(this, R.color.text_muted))
+            }
+            RepeatMode.ALL -> {
+                btnFpRepeat?.setImageResource(R.drawable.ic_repeat)
+                btnFpRepeat?.setColorFilter(ContextCompat.getColor(this, R.color.yellow_primary))
+            }
+            RepeatMode.ONE -> {
+                btnFpRepeat?.setImageResource(R.drawable.ic_repeat_one)
+                btnFpRepeat?.setColorFilter(ContextCompat.getColor(this, R.color.yellow_primary))
+            }
+        }
+        btnFpPrev?.alpha = if (audioPlayer.hasPrevious) 1.0f else 0.35f
+        btnFpNext?.alpha = if (audioPlayer.hasNext) 1.0f else 0.35f
+    }
+
+    private fun updatePlayerScreenLike(song: Song?) {
+        if (song == null) {
+            btnFpLike?.setImageResource(R.drawable.ic_favorite_border)
+            btnFpLike?.setColorFilter(ContextCompat.getColor(this, R.color.text_muted))
+            return
+        }
+        val isLiked = playlistManager.isLiked(song)
+        btnFpLike?.setImageResource(if (isLiked) R.drawable.ic_favorite else R.drawable.ic_favorite_border)
+        btnFpLike?.setColorFilter(if (isLiked) Color.parseColor("#FFFF0055") else ContextCompat.getColor(this, R.color.text_muted))
+    }
+
+    private fun setupViewPager() {
+        val tabViews = listOf(syncView, libraryView, playerView, playlistsView, logsView)
+        viewPager.adapter = object : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
+            override fun getItemCount(): Int = tabViews.size
+
+            override fun getItemViewType(position: Int): Int = position
+
+            override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
+                val container = FrameLayout(parent.context).apply {
+                    layoutParams = ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    )
+                }
+                val pageView = tabViews[viewType]
+                (pageView.parent as? ViewGroup)?.removeView(pageView)
+                container.addView(pageView)
+                return object : RecyclerView.ViewHolder(container) {}
+            }
+
+            override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
+                val container = holder.itemView as FrameLayout
+                val pageView = tabViews[position]
+                if (pageView.parent != container) {
+                    (pageView.parent as? ViewGroup)?.removeView(pageView)
+                    container.removeAllViews()
+                    container.addView(pageView)
+                }
+            }
+        }
+        viewPager.offscreenPageLimit = 4
+        viewPager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
+            override fun onPageSelected(position: Int) {
+                super.onPageSelected(position)
+                updateNavTabUI(position)
+                onTabActivated(position)
+            }
+        })
+    }
+
+    private fun updateNavTabUI(tab: Int) {
         currentTab = tab
-        layoutContent.removeAllViews()
 
         val yellow = ContextCompat.getColor(this, R.color.yellow_primary)
         val muted = ContextCompat.getColor(this, R.color.text_muted)
@@ -723,27 +1205,47 @@ class MainActivity : AppCompatActivity() {
         ivTabLibrary.setColorFilter(if (tab == TAB_LIBRARY) yellow else muted)
         tvTabLibrary.setTextColor(if (tab == TAB_LIBRARY) yellow else muted)
 
+        ivTabPlayer.setColorFilter(if (tab == TAB_PLAYER) yellow else muted)
+        tvTabPlayer.setTextColor(if (tab == TAB_PLAYER) yellow else muted)
+
         ivTabPlaylists.setColorFilter(if (tab == TAB_PLAYLISTS) yellow else muted)
         tvTabPlaylists.setTextColor(if (tab == TAB_PLAYLISTS) yellow else muted)
 
         ivTabLogs.setColorFilter(if (tab == TAB_LOGS) yellow else muted)
         tvTabLogs.setTextColor(if (tab == TAB_LOGS) yellow else muted)
+    }
 
+    private fun onTabActivated(tab: Int) {
         when (tab) {
-            TAB_SYNC -> layoutContent.addView(syncView)
+            TAB_SYNC -> { /* No-op */ }
             TAB_LIBRARY -> {
-                layoutContent.addView(libraryView)
                 if (libraryMode == MODE_LOCAL && localSongs.isEmpty()) {
                     loadLocalLibrary()
                 } else if (libraryMode == MODE_REMOTE && remoteSongs.isEmpty()) {
                     loadRemoteLibrary()
                 }
             }
+            TAB_PLAYER -> {
+                playerBarContainer.visibility = View.GONE
+                updatePlayerScreenUI(audioPlayer.currentSong)
+            }
             TAB_PLAYLISTS -> {
-                layoutContent.addView(playlistsView)
                 loadPlaylists()
             }
-            TAB_LOGS -> layoutContent.addView(logsView)
+            TAB_LOGS -> { /* No-op */ }
+        }
+
+        if (tab != TAB_PLAYER) {
+            playerBarContainer.visibility = if (audioPlayer.currentSong != null) View.VISIBLE else View.GONE
+        }
+    }
+
+    private fun switchTab(tab: Int, smoothScroll: Boolean = true) {
+        if (viewPager.currentItem != tab) {
+            viewPager.setCurrentItem(tab, smoothScroll)
+        } else {
+            updateNavTabUI(tab)
+            onTabActivated(tab)
         }
     }
 
@@ -804,33 +1306,134 @@ class MainActivity : AppCompatActivity() {
         logAdapter.addLog("[SERVER] Stopped Over-IP server.")
     }
 
+    private fun renderSyncDevicesList() {
+        val container = layoutSyncDevicesList ?: return
+        container.removeAllViews()
+
+        if (discoveredSyncDevices.isEmpty()) {
+            badgeDevicesCount?.visibility = View.GONE
+            return
+        }
+
+        badgeDevicesCount?.text = "${discoveredSyncDevices.size} Found"
+        badgeDevicesCount?.visibility = View.VISIBLE
+
+        val currentTargetIp = getTargetPeerIp()
+        val currentTargetPort = getTargetPeerPort()
+
+        for (peer in discoveredSyncDevices) {
+            val itemView = LayoutInflater.from(this).inflate(R.layout.item_discovered_device, container, false)
+            val ivIcon = itemView.findViewById<ImageView>(R.id.iv_device_icon)
+            val tvName = itemView.findViewById<TextView>(R.id.tv_device_name)
+            val tvAddress = itemView.findViewById<TextView>(R.id.tv_device_address)
+            val tvRole = itemView.findViewById<TextView>(R.id.tv_device_role_badge)
+            val tvStatus = itemView.findViewById<TextView>(R.id.tv_device_status_badge)
+
+            ivIcon?.setImageResource(if (peer.isAndroid) R.drawable.ic_phone_android else R.drawable.ic_computer)
+            tvName.text = peer.hostname
+            tvAddress.text = "${peer.ip}:${peer.port}"
+            tvRole.text = if (peer.isAndroid) "PHONE" else "DESKTOP"
+
+            val isSelected = peer.ip.equals(currentTargetIp, ignoreCase = true) && peer.port == currentTargetPort
+
+            if (isSelected) {
+                itemView.setBackgroundResource(R.drawable.bg_card)
+                tvStatus.text = "ACTIVE"
+                tvStatus.setBackgroundResource(R.drawable.bg_badge_yellow)
+                tvStatus.setTextColor(ContextCompat.getColor(this, R.color.yellow_primary))
+                tvName.setTextColor(ContextCompat.getColor(this, R.color.yellow_primary))
+            } else {
+                itemView.setBackgroundResource(R.drawable.bg_button_dark)
+                tvStatus.text = "CONNECT"
+                tvStatus.setBackgroundResource(R.drawable.bg_card)
+                tvStatus.setTextColor(ContextCompat.getColor(this, R.color.text_secondary))
+                tvName.setTextColor(ContextCompat.getColor(this, R.color.text_primary))
+            }
+
+            itemView.setOnClickListener {
+                selectSyncDevice(peer)
+            }
+
+            container.addView(itemView)
+        }
+    }
+
+    private fun selectSyncDevice(peer: com.aruncs.musicsync.server.DiscoveredPeer) {
+        etDesktopIp?.setText(peer.ip)
+        etDesktopPort?.setText(peer.port.toString())
+        prefs.desktopIp = peer.ip
+        prefs.desktopPort = peer.port
+        activePeerIp = peer.ip
+        activePeerPort = peer.port
+        activePeerName = peer.hostname
+        updatePeerBarText()
+
+        renderSyncDevicesList()
+        pingDesktopServer()
+        Toast.makeText(this, "Target set to ${peer.hostname} (${peer.ip}:${peer.port})", Toast.LENGTH_SHORT).show()
+    }
+
     private fun autoDiscoverDesktop(showToast: Boolean = false) {
-        tvDesktopStatus?.text = "Scanning Wi-Fi network for Desktop..."
-        logAdapter.addLog("[DISCOVERY] Scanning Wi-Fi network for Desktop...")
+        scanForNearbyDevices(showToast)
+    }
+
+    private fun scanForNearbyDevices(showToast: Boolean = false) {
+        pbDevicesScanning?.visibility = View.VISIBLE
+        btnAutoDiscover?.isEnabled = false
+        tvDesktopStatus?.text = "Scanning Wi-Fi / Hotspot for devices..."
+        tvDesktopStatus?.setTextColor(ContextCompat.getColor(this, R.color.text_muted))
+        logAdapter.addLog("[DISCOVERY] Scanning Wi-Fi / Hotspot for nearby devices...")
 
         lifecycleScope.launch {
-            val found = PeerDiscoveryManager.discoverDesktop(
+            val peers = com.aruncs.musicsync.server.PeerDiscoveryManager.discoverAllPeers(
                 context = this@MainActivity,
-                timeoutMs = 3000,
-                onFound = { foundIp, foundPort, hostname ->
+                timeoutMs = 2500,
+                onPeerFound = { peer ->
                     runOnUiThread {
-                        etDesktopIp?.setText(foundIp)
-                        etDesktopPort?.setText(foundPort.toString())
-                        prefs.desktopIp = foundIp
-                        prefs.desktopPort = foundPort
-                        tvDesktopStatus?.text = "Discovered Desktop at $foundIp:$foundPort"
-                        logAdapter.addLog("[DISCOVERY] Found Desktop ($hostname) at http://$foundIp:$foundPort")
-                        if (showToast) Toast.makeText(this@MainActivity, "Found Desktop: $foundIp", Toast.LENGTH_SHORT).show()
+                        val exists = discoveredSyncDevices.any { it.ip == peer.ip && it.port == peer.port }
+                        if (!exists) {
+                            discoveredSyncDevices.add(peer)
+                            renderSyncDevicesList()
+                        }
                     }
                 },
                 onLog = { msg ->
                     runOnUiThread { logAdapter.addLog(msg) }
                 }
             )
-            if (!found) {
-                runOnUiThread {
-                    tvDesktopStatus?.text = "No Desktop found via UDP broadcast"
-                    if (showToast) Toast.makeText(this@MainActivity, "Desktop not detected. Set IP manually.", Toast.LENGTH_SHORT).show()
+
+            runOnUiThread {
+                pbDevicesScanning?.visibility = View.GONE
+                btnAutoDiscover?.isEnabled = true
+
+                for (p in peers) {
+                    if (discoveredSyncDevices.none { it.ip == p.ip && it.port == p.port }) {
+                        discoveredSyncDevices.add(p)
+                    }
+                }
+                renderSyncDevicesList()
+
+                if (discoveredSyncDevices.isNotEmpty()) {
+                    tvDesktopStatus?.text = "Discovered ${discoveredSyncDevices.size} device(s) on network."
+                    tvDesktopStatus?.setTextColor(ContextCompat.getColor(this@MainActivity, R.color.status_online))
+
+                    val curIp = etDesktopIp?.text?.toString()?.trim() ?: prefs.desktopIp
+                    val curPort = etDesktopPort?.text?.toString()?.toIntOrNull() ?: prefs.desktopPort
+                    val currentMatch = discoveredSyncDevices.firstOrNull { it.ip.equals(curIp, true) && it.port == curPort }
+
+                    if (currentMatch == null && curIp.isEmpty() && discoveredSyncDevices.isNotEmpty()) {
+                        selectSyncDevice(discoveredSyncDevices.first())
+                    }
+
+                    if (showToast) {
+                        Toast.makeText(this@MainActivity, "Found ${discoveredSyncDevices.size} device(s) on network", Toast.LENGTH_SHORT).show()
+                    }
+                } else {
+                    tvDesktopStatus?.text = "No devices detected. Check Wi-Fi/Hotspot or enter IP manually."
+                    tvDesktopStatus?.setTextColor(ContextCompat.getColor(this@MainActivity, R.color.text_muted))
+                    if (showToast) {
+                        Toast.makeText(this@MainActivity, "No devices detected via UDP broadcast. Set IP manually.", Toast.LENGTH_SHORT).show()
+                    }
                 }
             }
         }
@@ -876,11 +1479,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startSyncPull() {
-        val ip = etDesktopIp?.text?.toString()?.trim() ?: prefs.desktopIp
-        val port = etDesktopPort?.text?.toString()?.toIntOrNull() ?: prefs.desktopPort
+        val ip = getTargetPeerIp()
+        val port = getTargetPeerPort()
+        val targetName = activePeerName ?: "$ip:$port"
 
-        setSyncInProgress(true, "Comparing tracks with Desktop...")
-        logAdapter.addLog("[SYNC-PULL] Starting Pull Sync from Desktop ($ip:$port)...")
+        setSyncInProgress(true, "Comparing tracks with $targetName...")
+        logAdapter.addLog("[SYNC-PULL] Starting Pull Sync from $targetName ($ip:$port)...")
 
         lifecycleScope.launch {
             try {
@@ -894,7 +1498,7 @@ class MainActivity : AppCompatActivity() {
                 if (songsToPull.isEmpty()) {
                     runOnUiThread {
                         setSyncInProgress(false)
-                        tvSyncStatusLabel?.text = "Library is already in sync!"
+                        tvSyncStatusLabel?.text = "Library is already in sync with $targetName!"
                         Toast.makeText(this@MainActivity, "Device is already up to date!", Toast.LENGTH_SHORT).show()
                     }
                     return@launch
@@ -938,11 +1542,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun startSyncPush() {
-        val ip = etDesktopIp?.text?.toString()?.trim() ?: prefs.desktopIp
-        val port = etDesktopPort?.text?.toString()?.toIntOrNull() ?: prefs.desktopPort
+        val ip = getTargetPeerIp()
+        val port = getTargetPeerPort()
+        val targetName = activePeerName ?: "$ip:$port"
 
         setSyncInProgress(true, "Scanning local library for new songs...")
-        logAdapter.addLog("[SYNC-PUSH] Starting Push Sync to Desktop ($ip:$port)...")
+        logAdapter.addLog("[SYNC-PUSH] Starting Push Sync to $targetName ($ip:$port)...")
 
         lifecycleScope.launch {
             try {
@@ -956,8 +1561,8 @@ class MainActivity : AppCompatActivity() {
                 if (songsToPush.isEmpty()) {
                     runOnUiThread {
                         setSyncInProgress(false)
-                        tvSyncStatusLabel?.text = "No new songs to push to Desktop."
-                        Toast.makeText(this@MainActivity, "All local songs already on Desktop!", Toast.LENGTH_SHORT).show()
+                        tvSyncStatusLabel?.text = "No new songs to push to $targetName."
+                        Toast.makeText(this@MainActivity, "All local songs already on $targetName!", Toast.LENGTH_SHORT).show()
                     }
                     return@launch
                 }
@@ -1012,11 +1617,25 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun getStreamUrl(song: Song): String {
-        val ip = etDesktopIp?.text?.toString()?.trim() ?: prefs.desktopIp
-        val port = etDesktopPort?.text?.toString()?.toIntOrNull() ?: prefs.desktopPort
+        val ip = getTargetPeerIp()
+        val port = getTargetPeerPort()
         val cleanIp = ip.removePrefix("http://").removePrefix("https://").trimEnd('/')
-        val encoded = URLEncoder.encode(song.filepath, "UTF-8")
-        return "http://$cleanIp:$port/api/song/stream?filepath=$encoded"
+        val encodedPath = URLEncoder.encode(song.filepath, "UTF-8")
+        val encodedName = URLEncoder.encode(song.filename, "UTF-8")
+        return "http://$cleanIp:$port/api/song/stream?filepath=$encodedPath&filename=$encodedName"
+    }
+
+    private fun createPlayableItem(song: Song, isRemote: Boolean): PlayableItem {
+        if (!isRemote) {
+            return PlayableItem(song, streamUrl = null)
+        }
+        // For remote tracks, check if already present locally using our fast in-memory index
+        val localMatch = localSongMap[song.filename.lowercase(Locale.US)]
+        return if (localMatch != null) {
+            PlayableItem(song.copy(filepath = localMatch.filepath), streamUrl = null)
+        } else {
+            PlayableItem(song, streamUrl = getStreamUrl(song))
+        }
     }
 
     // ==========================================
@@ -1141,19 +1760,20 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun downloadRemoteSong(song: Song) {
-        val ip = etDesktopIp?.text?.toString()?.trim() ?: prefs.desktopIp
-        val port = etDesktopPort?.text?.toString()?.toIntOrNull() ?: prefs.desktopPort
+        val ip = getTargetPeerIp()
+        val port = getTargetPeerPort()
         val destDir = prefs.musicStorageDirectory
         val destFile = File(destDir, song.filename)
         val quality = prefs.downloadQuality
+        val targetName = activePeerName ?: "Peer"
 
         Toast.makeText(this, "Downloading ${song.title}...", Toast.LENGTH_SHORT).show()
-        logAdapter.addLog("[DOWNLOAD] Starting download of '${song.filename}' from Desktop (quality: $quality)...")
+        logAdapter.addLog("[DOWNLOAD] Starting download of '${song.filename}' from $targetName (quality: $quality)...")
 
         lifecycleScope.launch {
             try {
-                val ok = apiClient.downloadSong(ip, port, song.filepath, destFile, bitrate = quality)
-                if (ok && destFile.exists()) {
+                val ok = apiClient.downloadSong(ip, port, song.filepath, destFile, bitrate = quality, context = this@MainActivity)
+                if (ok) {
                     withContext(Dispatchers.IO) {
                         com.aruncs.musicsync.data.MediaScannerHelper.scanFile(this@MainActivity, destFile.absolutePath)
                         localSongs = MediaStoreHelper.getAllDeviceSongs(this@MainActivity)
@@ -1163,6 +1783,12 @@ class MainActivity : AppCompatActivity() {
                         songsAdapter.setRemoteMode(true, localNames)
                         Toast.makeText(this@MainActivity, "Downloaded ${song.title}", Toast.LENGTH_SHORT).show()
                         logAdapter.addLog("[DOWNLOAD] Successfully saved '${destFile.name}' to /Music")
+                        // If this song is still the one playing, update the download button to dimmed green
+                        if (audioPlayer.currentSong?.id == song.id) {
+                            btnFpDownload?.setColorFilter(ContextCompat.getColor(this@MainActivity, R.color.status_online))
+                            btnFpDownload?.contentDescription = "Already on Device"
+                            btnFpDownload?.alpha = 0.55f
+                        }
                     }
                 }
             } catch (e: Exception) {
@@ -1225,7 +1851,7 @@ class MainActivity : AppCompatActivity() {
             updatePlayerLikeButton(song)
         }
 
-        val msg = if (nowLiked) "Added to Liked Music ❤️" else "Removed from Liked Music"
+        val msg = if (nowLiked) "Added to Liked Music" else "Removed from Liked Music"
         Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
 
         if (currentTab == TAB_PLAYLISTS && playlistMode == MODE_LOCAL) {
@@ -1307,29 +1933,349 @@ class MainActivity : AppCompatActivity() {
     // ==========================================
 
     private fun showSongOptionsDialog(song: Song) {
-        val options = arrayOf("Play Next", "Add to Queue", "Add to Playlist...", "Delete Song")
+        val options = arrayOf("Song Info / Audio Tags", "Play Next", "Add to Queue", "Add to Playlist...", "Delete Song")
         AlertDialog.Builder(this)
             .setTitle(song.title)
             .setItems(options) { _, which ->
-                val streamUrl = if (libraryMode == MODE_REMOTE) getStreamUrl(song) else null
+                val item = createPlayableItem(song, libraryMode == MODE_REMOTE)
                 when (which) {
                     0 -> {
-                        audioPlayer.addToQueueNext(song, streamUrl)
-                        Toast.makeText(this, "Will play next: ${song.title}", Toast.LENGTH_SHORT).show()
+                        showAudioInfoDialog(song)
                     }
                     1 -> {
-                        audioPlayer.addToQueue(song, streamUrl)
-                        Toast.makeText(this, "Added to queue: ${song.title}", Toast.LENGTH_SHORT).show()
+                        audioPlayer.addToQueueNext(item.song, item.streamUrl)
+                        Toast.makeText(this, "Will play next: ${song.title}", Toast.LENGTH_SHORT).show()
                     }
                     2 -> {
-                        showAddToPlaylistDialog(song)
+                        audioPlayer.addToQueue(item.song, item.streamUrl)
+                        Toast.makeText(this, "Added to queue: ${song.title}", Toast.LENGTH_SHORT).show()
                     }
                     3 -> {
+                        showAddToPlaylistDialog(song)
+                    }
+                    4 -> {
                         confirmDeleteSong(song)
                     }
                 }
             }
             .show()
+    }
+
+    private fun showNowPlayingDialog() {
+        val currentSong = audioPlayer.currentSong ?: return
+        if (nowPlayingDialog?.isShowing == true) return
+
+        val dialog = BottomSheetDialog(this, com.google.android.material.R.style.Theme_Design_BottomSheetDialog)
+        val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_now_playing, null)
+        dialog.setContentView(dialogView)
+
+        val bottomSheet = dialog.findViewById<View>(com.google.android.material.R.id.design_bottom_sheet)
+        bottomSheet?.layoutParams?.height = ViewGroup.LayoutParams.MATCH_PARENT
+        dialog.behavior.state = BottomSheetBehavior.STATE_EXPANDED
+        dialog.behavior.skipCollapsed = true
+
+        val btnCollapse = dialogView.findViewById<ImageButton>(R.id.btn_np_collapse)
+        val tvQueuePos = dialogView.findViewById<TextView>(R.id.tv_np_queue_pos)
+        val btnInfo = dialogView.findViewById<ImageButton>(R.id.btn_np_info)
+        val btnQueue = dialogView.findViewById<ImageButton>(R.id.btn_np_queue)
+        val layoutAlbumArt = dialogView.findViewById<FrameLayout>(R.id.layout_np_album_art)
+        val layoutSongInfo = dialogView.findViewById<LinearLayout>(R.id.layout_np_song_info)
+        val tvTitle = dialogView.findViewById<TextView>(R.id.tv_np_title)
+        val tvArtist = dialogView.findViewById<TextView>(R.id.tv_np_artist)
+        val tvAlbum = dialogView.findViewById<TextView>(R.id.tv_np_album)
+        val tvBadgeFormat = dialogView.findViewById<TextView>(R.id.tv_np_badge_format)
+        val tvBadgeBitrate = dialogView.findViewById<TextView>(R.id.tv_np_badge_bitrate)
+        val tvBadgeSamplerate = dialogView.findViewById<TextView>(R.id.tv_np_badge_samplerate)
+        val tvBadgeSource = dialogView.findViewById<TextView>(R.id.tv_np_badge_source)
+        val npSeekbar = dialogView.findViewById<SeekBar>(R.id.np_seekbar)
+        val tvCurrentTime = dialogView.findViewById<TextView>(R.id.tv_np_current_time)
+        val tvTotalTime = dialogView.findViewById<TextView>(R.id.tv_np_total_time)
+        val btnShuffle = dialogView.findViewById<ImageButton>(R.id.btn_np_shuffle)
+        val btnPrev = dialogView.findViewById<ImageButton>(R.id.btn_np_prev)
+        val btnPlayPause = dialogView.findViewById<ImageButton>(R.id.btn_np_play_pause)
+        val btnNext = dialogView.findViewById<ImageButton>(R.id.btn_np_next)
+        val btnRepeat = dialogView.findViewById<ImageButton>(R.id.btn_np_repeat)
+        val btnLike = dialogView.findViewById<ImageButton>(R.id.btn_np_like)
+        val btnAudioInfo = dialogView.findViewById<TextView>(R.id.btn_np_audio_info)
+        val btnOptions = dialogView.findViewById<ImageButton>(R.id.btn_np_options)
+
+        // Enable marquee scrolling for song title
+        tvTitle.isSelected = true
+
+        fun updateNowPlayingSongUI(song: Song) {
+            val streamUrl = if (libraryMode == MODE_REMOTE) getStreamUrl(song) else null
+            val details = AudioInfoHelper.extract(song, streamUrl)
+
+            tvTitle.text = details.title
+            tvArtist.text = details.artist
+            tvAlbum.text = if (details.album.isNotBlank() && details.album != "Unknown Album") details.album else "Music Sync Library"
+
+            tvBadgeFormat.text = details.containerFormat
+            tvBadgeBitrate.text = details.bitrateKbps.replace(" (CBR)", "").replace(" (Lossless)", "")
+            tvBadgeSamplerate.text = if (details.sampleRateHz.contains("(")) {
+                details.sampleRateHz.substringAfter("(").substringBefore(")")
+            } else {
+                details.sampleRateHz
+            }
+            if (details.isRemote) {
+                tvBadgeSource.text = "OVER-IP"
+                tvBadgeSource.setTextColor(ContextCompat.getColor(this, R.color.yellow_primary))
+                tvBadgeSource.setBackgroundResource(R.drawable.bg_badge_yellow)
+            } else {
+                tvBadgeSource.text = "LOCAL"
+                tvBadgeSource.setTextColor(ContextCompat.getColor(this, R.color.status_online))
+                tvBadgeSource.setBackgroundResource(R.drawable.bg_badge_green)
+            }
+
+            val q = audioPlayer.queue
+            val qIdx = audioPlayer.currentIndex
+            if (q.isNotEmpty() && qIdx >= 0) {
+                tvQueuePos.text = "Track ${qIdx + 1} of ${q.size}"
+            } else {
+                tvQueuePos.text = "Now Playing"
+            }
+
+            val isLiked = playlistManager.isLiked(song)
+            btnLike.setImageResource(if (isLiked) R.drawable.ic_favorite else R.drawable.ic_favorite_border)
+            btnLike.setColorFilter(if (isLiked) ContextCompat.getColor(this, R.color.status_offline) else ContextCompat.getColor(this, R.color.text_muted))
+
+            btnPrev.alpha = if (audioPlayer.hasPrevious) 1.0f else 0.35f
+            btnNext.alpha = if (audioPlayer.hasNext) 1.0f else 0.35f
+        }
+
+        fun updateNowPlayingControls() {
+            btnPlayPause.setImageResource(if (audioPlayer.isPlaying) R.drawable.ic_pause else R.drawable.ic_play)
+            btnShuffle.setColorFilter(if (audioPlayer.isShuffled) ContextCompat.getColor(this, R.color.yellow_primary) else ContextCompat.getColor(this, R.color.text_muted))
+            when (audioPlayer.repeatMode) {
+                RepeatMode.OFF -> {
+                    btnRepeat.setImageResource(R.drawable.ic_repeat)
+                    btnRepeat.setColorFilter(ContextCompat.getColor(this, R.color.text_muted))
+                }
+                RepeatMode.ALL -> {
+                    btnRepeat.setImageResource(R.drawable.ic_repeat)
+                    btnRepeat.setColorFilter(ContextCompat.getColor(this, R.color.yellow_primary))
+                }
+                RepeatMode.ONE -> {
+                    btnRepeat.setImageResource(R.drawable.ic_repeat_one)
+                    btnRepeat.setColorFilter(ContextCompat.getColor(this, R.color.yellow_primary))
+                }
+            }
+            btnPrev.alpha = if (audioPlayer.hasPrevious) 1.0f else 0.35f
+            btnNext.alpha = if (audioPlayer.hasNext) 1.0f else 0.35f
+        }
+
+        updateNowPlayingSongUI(currentSong)
+        updateNowPlayingControls()
+
+        // Initialize progress
+        npSeekbar.progress = playerSeekbar?.progress ?: 0
+        tvCurrentTime.text = tvPlayerTime?.text?.split("/")?.firstOrNull()?.trim() ?: "00:00"
+        tvTotalTime.text = tvPlayerTime?.text?.split("/")?.getOrNull(1)?.trim() ?: currentSong.durationFormatted
+
+        btnCollapse.setOnClickListener { dialog.dismiss() }
+
+        // Pressing screen, artwork, or song info opens Poweramp Audio Info & Tags
+        layoutAlbumArt.setOnClickListener {
+            audioPlayer.currentSong?.let { showAudioInfoDialog(it) }
+        }
+        layoutAlbumArt.setOnLongClickListener {
+            audioPlayer.currentSong?.let { showAudioInfoDialog(it) }
+            true
+        }
+        layoutSongInfo.setOnClickListener {
+            audioPlayer.currentSong?.let { showAudioInfoDialog(it) }
+        }
+        layoutSongInfo.setOnLongClickListener {
+            audioPlayer.currentSong?.let { showAudioInfoDialog(it) }
+            true
+        }
+        btnInfo.setOnClickListener {
+            audioPlayer.currentSong?.let { showAudioInfoDialog(it) }
+        }
+        btnAudioInfo.setOnClickListener {
+            audioPlayer.currentSong?.let { showAudioInfoDialog(it) }
+        }
+
+        btnQueue.setOnClickListener {
+            showQueueDialog()
+        }
+
+        btnPlayPause.setOnClickListener {
+            audioPlayer.togglePlayPause()
+            updateNowPlayingControls()
+        }
+
+        btnPrev.setOnClickListener {
+            audioPlayer.playPrevious()
+        }
+
+        btnNext.setOnClickListener {
+            audioPlayer.playNext()
+        }
+
+        btnShuffle.setOnClickListener {
+            val s = audioPlayer.toggleShuffle()
+            updateShuffleButton(s)
+            updateNowPlayingControls()
+            Toast.makeText(this, if (s) "Shuffle On" else "Shuffle Off", Toast.LENGTH_SHORT).show()
+        }
+
+        btnRepeat.setOnClickListener {
+            val m = audioPlayer.toggleRepeat()
+            updateRepeatButton(m)
+            updateNowPlayingControls()
+            val msg = when (m) {
+                RepeatMode.OFF -> "Repeat Off"
+                RepeatMode.ALL -> "Repeat All"
+                RepeatMode.ONE -> "Repeat One"
+            }
+            Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+        }
+
+        btnLike.setOnClickListener {
+            audioPlayer.currentSong?.let { song ->
+                toggleSongLiked(song)
+                val isLiked = playlistManager.isLiked(song)
+                btnLike.setImageResource(if (isLiked) R.drawable.ic_favorite else R.drawable.ic_favorite_border)
+                btnLike.setColorFilter(if (isLiked) ContextCompat.getColor(this, R.color.status_offline) else ContextCompat.getColor(this, R.color.text_muted))
+            }
+        }
+
+        btnOptions.setOnClickListener {
+            audioPlayer.currentSong?.let { showSongOptionsDialog(it) }
+        }
+
+        npSeekbar.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (fromUser) {
+                    val ratio = progress.toFloat() / 1000f
+                    audioPlayer.seekTo(ratio)
+                }
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: SeekBar?) {}
+        })
+
+        // Live player updates in Now Playing dialog
+        nowPlayingUpdateCallback = { song ->
+            runOnUiThread {
+                if (dialog.isShowing) {
+                    updateNowPlayingSongUI(song)
+                    updateNowPlayingControls()
+                }
+            }
+        }
+
+        nowPlayingStateCallback = { _ ->
+            runOnUiThread {
+                if (dialog.isShowing) {
+                    updateNowPlayingControls()
+                }
+            }
+        }
+
+        nowPlayingProgressCallback = { currentMs, totalMs ->
+            runOnUiThread {
+                if (dialog.isShowing && totalMs > 0) {
+                    val ratio = (currentMs.toFloat() / totalMs.toFloat()) * 1000f
+                    npSeekbar.progress = ratio.toInt()
+
+                    val curMin = currentMs / 1000 / 60
+                    val curSec = (currentMs / 1000) % 60
+                    val totMin = totalMs / 1000 / 60
+                    val totSec = (totalMs / 1000) % 60
+                    tvCurrentTime.text = String.format(Locale.US, "%02d:%02d", curMin, curSec)
+                    tvTotalTime.text = String.format(Locale.US, "%02d:%02d", totMin, totSec)
+                }
+            }
+        }
+
+        nowPlayingModeCallback = { _, _ ->
+            runOnUiThread {
+                if (dialog.isShowing) {
+                    updateNowPlayingControls()
+                }
+            }
+        }
+
+        dialog.setOnDismissListener {
+            nowPlayingDialog = null
+            nowPlayingUpdateCallback = null
+            nowPlayingStateCallback = null
+            nowPlayingProgressCallback = null
+            nowPlayingModeCallback = null
+        }
+
+        nowPlayingDialog = dialog
+        dialog.show()
+    }
+
+    private fun showAudioInfoDialog(song: Song) {
+        val streamUrl = if (libraryMode == MODE_REMOTE) getStreamUrl(song) else null
+        val details = AudioInfoHelper.extract(song, streamUrl)
+
+        val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_audio_info, null)
+        val tvTitle = dialogView.findViewById<TextView>(R.id.tv_info_title)
+        val tvArtist = dialogView.findViewById<TextView>(R.id.tv_info_artist)
+        val tvAlbumArtist = dialogView.findViewById<TextView>(R.id.tv_info_album_artist)
+        val tvAlbum = dialogView.findViewById<TextView>(R.id.tv_info_album)
+        val tvTrackDisc = dialogView.findViewById<TextView>(R.id.tv_info_track_disc)
+        val tvYearGenre = dialogView.findViewById<TextView>(R.id.tv_info_year_genre)
+
+        val tvFormat = dialogView.findViewById<TextView>(R.id.tv_info_format)
+        val tvBitrate = dialogView.findViewById<TextView>(R.id.tv_info_bitrate)
+        val tvSampleBits = dialogView.findViewById<TextView>(R.id.tv_info_sample_bits)
+        val tvChannels = dialogView.findViewById<TextView>(R.id.tv_info_channels)
+        val tvSize = dialogView.findViewById<TextView>(R.id.tv_info_size)
+
+        val tvSourceBadge = dialogView.findViewById<TextView>(R.id.tv_info_source_badge)
+        val tvFilePath = dialogView.findViewById<TextView>(R.id.tv_info_file_path)
+        val btnCopyPath = dialogView.findViewById<TextView>(R.id.btn_copy_file_path)
+        val btnClose = dialogView.findViewById<ImageButton>(R.id.btn_audio_info_close)
+        val btnDone = dialogView.findViewById<TextView>(R.id.btn_audio_info_done)
+
+        tvTitle.text = details.title
+        tvArtist.text = details.artist
+        tvAlbumArtist.text = details.albumArtist
+        tvAlbum.text = details.album
+        tvTrackDisc.text = "Track ${details.trackNumber} / Disc ${details.discNumber}"
+        tvYearGenre.text = "${details.year} • ${details.genre}"
+
+        tvFormat.text = details.formatLabel
+        tvBitrate.text = details.bitrateKbps
+        tvSampleBits.text = "${details.sampleRateHz} • ${details.bitDepth}"
+        tvChannels.text = "${details.channels} • ${details.durationFormatted}"
+        tvSize.text = details.sizeFormatted
+
+        if (details.isRemote) {
+            tvSourceBadge.text = "OVER-IP STREAM"
+            tvSourceBadge.setBackgroundResource(R.drawable.bg_badge_yellow)
+            tvSourceBadge.setTextColor(ContextCompat.getColor(this, R.color.yellow_primary))
+        } else {
+            tvSourceBadge.text = "LOCAL STORAGE"
+            tvSourceBadge.setBackgroundResource(R.drawable.bg_badge_green)
+            tvSourceBadge.setTextColor(ContextCompat.getColor(this, R.color.status_online))
+        }
+
+        tvFilePath.text = details.filePath
+
+        val dialog = AlertDialog.Builder(this)
+            .setView(dialogView)
+            .create()
+
+        dialog.window?.setBackgroundDrawableResource(android.R.color.transparent)
+
+        btnCopyPath.setOnClickListener {
+            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+            val clip = ClipData.newPlainText("File Path", details.filePath)
+            clipboard.setPrimaryClip(clip)
+            Toast.makeText(this, "Path copied to clipboard", Toast.LENGTH_SHORT).show()
+        }
+
+        btnClose.setOnClickListener { dialog.dismiss() }
+        btnDone.setOnClickListener { dialog.dismiss() }
+
+        dialog.show()
     }
 
     private fun showQueueDialog() {
@@ -1379,6 +2325,25 @@ class MainActivity : AppCompatActivity() {
     // PLAYLISTS TAB & MANAGEMENT
     // ==========================================
 
+    private fun getTargetPeerIp(): String {
+        return activePeerIp?.ifBlank { null }
+            ?: etDesktopIp?.text?.toString()?.trim()?.ifBlank { null }
+            ?: prefs.desktopIp
+    }
+
+    private fun getTargetPeerPort(): Int {
+        return activePeerPort
+            ?: etDesktopPort?.text?.toString()?.toIntOrNull()
+            ?: prefs.desktopPort
+    }
+
+    private fun updatePeerBarText() {
+        val ip = getTargetPeerIp()
+        val port = getTargetPeerPort()
+        val name = activePeerName ?: "Peer"
+        tvActivePeerInfo?.text = "$name: $ip:$port"
+    }
+
     private fun switchPlaylistMode(mode: Int) {
         playlistMode = mode
         val muted = ContextCompat.getColor(this, R.color.text_muted)
@@ -1391,12 +2356,15 @@ class MainActivity : AppCompatActivity() {
             btnPlaylistTabLocal?.setTextColor(black)
             btnPlaylistTabRemote?.background = null
             btnPlaylistTabRemote?.setTextColor(muted)
+            layoutPeerSelectorBar?.visibility = View.GONE
             loadLocalPlaylists()
         } else {
             btnPlaylistTabRemote?.setBackgroundResource(R.drawable.bg_button_yellow)
             btnPlaylistTabRemote?.setTextColor(black)
             btnPlaylistTabLocal?.background = null
             btnPlaylistTabLocal?.setTextColor(muted)
+            layoutPeerSelectorBar?.visibility = View.VISIBLE
+            updatePeerBarText()
             loadRemotePlaylists()
         }
     }
@@ -1415,7 +2383,7 @@ class MainActivity : AppCompatActivity() {
         val likedSongs = playlistManager.getLikedSongs(localSongs)
         val likedPlaylist = Playlist(
             id = -1L,
-            name = "❤️ Liked Music",
+            name = "Liked Music",
             trackCount = likedSongs.size,
             isRemote = false,
             trackFilepaths = likedSongs.map { it.filepath }
@@ -1429,17 +2397,18 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun loadRemotePlaylists() {
-        val ip = etDesktopIp?.text?.toString()?.trim() ?: prefs.desktopIp
-        val port = etDesktopPort?.text?.toString()?.toIntOrNull() ?: prefs.desktopPort
+        val ip = getTargetPeerIp()
+        val port = getTargetPeerPort()
 
         if (ip.isEmpty()) {
-            tvPlaylistsEmpty?.text = "Desktop IP not configured. Set IP on Sync tab."
+            tvPlaylistsEmpty?.text = "No peer device configured. Tap 'Select Peer' above to discover devices."
             tvPlaylistsEmpty?.visibility = View.VISIBLE
             playlistsAdapter.submitList(emptyList())
             badgePlaylistsCount?.text = "0 playlists"
             return
         }
 
+        updatePeerBarText()
         swipeRefreshPlaylists?.isRefreshing = true
         tvPlaylistsEmpty?.visibility = View.GONE
 
@@ -1450,14 +2419,16 @@ class MainActivity : AppCompatActivity() {
                 runOnUiThread {
                     playlistsAdapter.submitList(lists)
                     badgePlaylistsCount?.text = "${lists.size} playlists"
-                    tvPlaylistsEmpty?.text = "No playlists found on Desktop.\nTap '+ New' to create one."
+                    val peerLabel = activePeerName ?: "$ip:$port"
+                    tvPlaylistsEmpty?.text = "No playlists found on $peerLabel.\nTap '+ New' to create one."
                     tvPlaylistsEmpty?.visibility = if (lists.isEmpty()) View.VISIBLE else View.GONE
                     swipeRefreshPlaylists?.isRefreshing = false
                 }
             } catch (e: Exception) {
                 runOnUiThread {
                     swipeRefreshPlaylists?.isRefreshing = false
-                    tvPlaylistsEmpty?.text = "Could not reach Desktop ($ip:$port).\n${e.message}"
+                    val peerLabel = activePeerName ?: "$ip:$port"
+                    tvPlaylistsEmpty?.text = "Could not reach $peerLabel.\n${e.message}\nTap 'Select Peer' to choose another device."
                     tvPlaylistsEmpty?.visibility = View.VISIBLE
                     Toast.makeText(this@MainActivity, "Failed to load remote playlists: ${e.message}", Toast.LENGTH_SHORT).show()
                 }
@@ -1473,11 +2444,12 @@ class MainActivity : AppCompatActivity() {
         tvDetailEmpty?.visibility = View.GONE
 
         if (playlist.isRemote) {
-            val ip = etDesktopIp?.text?.toString()?.trim() ?: prefs.desktopIp
-            val port = etDesktopPort?.text?.toString()?.toIntOrNull() ?: prefs.desktopPort
+            btnDetailSyncPlaylist?.visibility = View.VISIBLE
+            val ip = getTargetPeerIp()
+            val port = getTargetPeerPort()
             lifecycleScope.launch {
                 try {
-                    val tracks = apiClient.fetchPlaylistTracks(ip, port, playlist.id)
+                    val tracks = apiClient.fetchPlaylistTracks(ip, port, playlist.id, playlist.name)
                     playlistTracks = tracks
                     runOnUiThread {
                         val localNames = localSongs.map { it.filename.lowercase(Locale.US) }.toSet()
@@ -1493,14 +2465,16 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         } else if (playlist.id == -1L) {
+            btnDetailSyncPlaylist?.visibility = View.GONE
             val tracks = playlistManager.getLikedSongs(localSongs)
             playlistTracks = tracks
             playlistDetailAdapter.setRemoteMode(false)
             playlistDetailAdapter.setLikedSet(playlistManager.getLikedFilepaths())
             playlistDetailAdapter.submitList(tracks)
-            tvDetailEmpty?.text = "No liked songs yet.\nTap ❤️ on any song to add it here."
+            tvDetailEmpty?.text = "No liked songs yet.\nTap Favorite on any song to add it here."
             tvDetailEmpty?.visibility = if (tracks.isEmpty()) View.VISIBLE else View.GONE
         } else {
+            btnDetailSyncPlaylist?.visibility = View.GONE
             val tracks = playlistManager.getPlaylistSongs(playlist, localSongs)
             playlistTracks = tracks
             playlistDetailAdapter.setRemoteMode(false)
@@ -1514,22 +2488,23 @@ class MainActivity : AppCompatActivity() {
     private fun closePlaylistDetail() {
         selectedPlaylist = null
         playlistTracks = emptyList()
+        btnDetailSyncPlaylist?.visibility = View.GONE
         layoutPlaylistDetail?.visibility = View.GONE
         layoutPlaylistsMain?.visibility = View.VISIBLE
     }
 
     private fun playPlaylist(playlist: Playlist) {
         if (playlist.isRemote) {
-            val ip = etDesktopIp?.text?.toString()?.trim() ?: prefs.desktopIp
-            val port = etDesktopPort?.text?.toString()?.toIntOrNull() ?: prefs.desktopPort
+            val ip = getTargetPeerIp()
+            val port = getTargetPeerPort()
             lifecycleScope.launch {
                 try {
-                    val tracks = apiClient.fetchPlaylistTracks(ip, port, playlist.id)
+                    val tracks = apiClient.fetchPlaylistTracks(ip, port, playlist.id, playlist.name)
                     if (tracks.isEmpty()) {
                         runOnUiThread { Toast.makeText(this@MainActivity, "Playlist is empty", Toast.LENGTH_SHORT).show() }
                         return@launch
                     }
-                    val items = tracks.map { s -> PlayableItem(s, getStreamUrl(s)) }
+                    val items = tracks.map { s -> createPlayableItem(s, true) }
                     runOnUiThread {
                         audioPlayer.setQueue(items, 0)
                         Toast.makeText(this@MainActivity, "Playing \"${playlist.name}\" (${items.size} tracks)", Toast.LENGTH_SHORT).show()
@@ -1636,26 +2611,133 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    fun showPeerSelectionDialog() {
+        val dialogView = LayoutInflater.from(this).inflate(R.layout.dialog_peer_selection, null)
+        val pbScanning = dialogView.findViewById<ProgressBar>(R.id.pb_peer_scanning)
+        val btnRescan = dialogView.findViewById<TextView>(R.id.btn_peer_rescan)
+        val layoutDiscovered = dialogView.findViewById<LinearLayout>(R.id.layout_discovered_peers)
+        val tvNoPeers = dialogView.findViewById<TextView>(R.id.tv_no_peers_found)
+        val etManualIp = dialogView.findViewById<EditText>(R.id.et_peer_manual_ip)
+        val etManualPort = dialogView.findViewById<EditText>(R.id.et_peer_manual_port)
+
+        etManualIp.setText(getTargetPeerIp())
+        etManualPort.setText(getTargetPeerPort().toString())
+
+        var dialog: AlertDialog? = null
+
+        fun addPeerItem(peer: com.aruncs.musicsync.server.DiscoveredPeer) {
+            val itemView = LayoutInflater.from(this).inflate(android.R.layout.simple_list_item_2, layoutDiscovered, false)
+            val text1 = itemView.findViewById<TextView>(android.R.id.text1)
+            val text2 = itemView.findViewById<TextView>(android.R.id.text2)
+            text1.text = peer.displayName
+            text1.setTextColor(ContextCompat.getColor(this, R.color.text_primary))
+            text1.setTypeface(null, android.graphics.Typeface.BOLD)
+            text2.text = "${peer.ip}:${peer.port}"
+            text2.setTextColor(ContextCompat.getColor(this, R.color.yellow_primary))
+
+            itemView.setPadding(24, 16, 24, 16)
+            itemView.setBackgroundResource(R.drawable.bg_card)
+            val lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                bottomMargin = 12
+            }
+            itemView.layoutParams = lp
+
+            itemView.setOnClickListener {
+                activePeerIp = peer.ip
+                activePeerPort = peer.port
+                activePeerName = peer.hostname
+                updatePeerBarText()
+                dialog?.dismiss()
+                loadRemotePlaylists()
+                Toast.makeText(this, "Connected to ${peer.hostname}", Toast.LENGTH_SHORT).show()
+            }
+
+            tvNoPeers.visibility = View.GONE
+            layoutDiscovered.addView(itemView)
+        }
+
+        fun scanForPeers() {
+            pbScanning.visibility = View.VISIBLE
+            layoutDiscovered.removeAllViews()
+            tvNoPeers.text = "Scanning Wi-Fi / Hotspot for devices..."
+            tvNoPeers.visibility = View.VISIBLE
+            layoutDiscovered.addView(tvNoPeers)
+
+            lifecycleScope.launch {
+                val peers = com.aruncs.musicsync.server.PeerDiscoveryManager.discoverAllPeers(
+                    context = this@MainActivity,
+                    timeoutMs = 2500,
+                    onPeerFound = { peer ->
+                        runOnUiThread {
+                            addPeerItem(peer)
+                        }
+                    },
+                    onLog = { msg ->
+                        runOnUiThread { logAdapter.addLog(msg) }
+                    }
+                )
+
+                runOnUiThread {
+                    pbScanning.visibility = View.GONE
+                    if (peers.isEmpty()) {
+                        tvNoPeers.text = "No devices detected automatically.\nEnsure both devices are on the same Wi-Fi or Hotspot,\nand the Music Sync server is started on the other device."
+                        tvNoPeers.visibility = View.VISIBLE
+                    }
+                }
+            }
+        }
+
+        btnRescan.setOnClickListener {
+            scanForPeers()
+        }
+
+        dialog = AlertDialog.Builder(this)
+            .setView(dialogView)
+            .setPositiveButton("Connect Manual IP") { _, _ ->
+                val ip = etManualIp.text.toString().trim()
+                val port = etManualPort.text.toString().toIntOrNull() ?: 5000
+                if (ip.isNotEmpty()) {
+                    activePeerIp = ip
+                    activePeerPort = port
+                    activePeerName = "Manual Peer"
+                    updatePeerBarText()
+                    loadRemotePlaylists()
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .create()
+
+        dialog.show()
+        scanForPeers()
+    }
+
     private fun syncRemotePlaylistWithQuality(playlist: Playlist) {
-        val ip = etDesktopIp?.text?.toString()?.trim() ?: prefs.desktopIp
-        val port = etDesktopPort?.text?.toString()?.toIntOrNull() ?: prefs.desktopPort
+        val ip = getTargetPeerIp()
+        val port = getTargetPeerPort()
 
         if (ip.isEmpty()) {
-            Toast.makeText(this, "Desktop IP is not configured", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "No peer configured. Select a peer device first.", Toast.LENGTH_SHORT).show()
+            showPeerSelectionDialog()
             return
         }
 
         val qualityOptions = arrayOf(
-            "192 kbps (Recommended)",
-            "128 kbps (Space Saver)",
-            "256 kbps (High Quality)",
-            "320 kbps (Maximum Quality)",
-            "Original (Lossless / As-is)"
+            "Original (Lossless / As-is)",
+            "192 kbps AAC (Recommended - High Quality)",
+            "128 kbps AAC (Space Saver)",
+            "256 kbps AAC (Audiophile Quality)",
+            "320 kbps AAC (Maximum Bitrate)"
         )
-        val bitrateValues = arrayOf("192k", "128k", "256k", "320k", "original")
+        val bitrateValues = arrayOf("original", "192k", "128k", "256k", "320k")
+
+        val peerDisplay = activePeerName ?: "$ip:$port"
 
         AlertDialog.Builder(this)
-            .setTitle("Sync \"${playlist.name}\" to Device")
+            .setTitle("Sync \"${playlist.name}\"")
+            .setMessage("Syncing from $peerDisplay.\nDownloads missing tracks directly and exports standard .m3u8 for Poweramp.\n\nChoose audio quality:")
             .setItems(qualityOptions) { _, which ->
                 val selectedBitrate = bitrateValues[which]
                 executePlaylistSync(playlist, ip, port, selectedBitrate)
@@ -1667,120 +2749,49 @@ class MainActivity : AppCompatActivity() {
     private fun executePlaylistSync(playlist: Playlist, ip: String, port: Int, bitrate: String) {
         val progressDialog = AlertDialog.Builder(this)
             .setTitle("Syncing \"${playlist.name}\"")
-            .setMessage("Contacting Desktop ($ip:$port)...")
+            .setMessage("Connecting to peer ($ip:$port)...")
             .setCancelable(false)
+            .setNegativeButton("Hide") { d, _ -> d.dismiss() }
             .create()
         progressDialog.show()
 
         lifecycleScope.launch {
             try {
-                val tracks = apiClient.fetchPlaylistTracks(ip, port, playlist.id)
-                if (tracks.isEmpty()) {
-                    withContext(Dispatchers.Main) {
-                        progressDialog.dismiss()
-                        Toast.makeText(this@MainActivity, "Playlist \"${playlist.name}\" is empty on Desktop", Toast.LENGTH_SHORT).show()
-                    }
-                    return@launch
-                }
-
-                val musicDir = prefs.musicStorageDirectory
-                if (!musicDir.exists()) musicDir.mkdirs()
-
-                // Query current local songs to ensure skip accuracy
-                val currentLocal = withContext(Dispatchers.IO) {
-                    MediaStoreHelper.getAllDeviceSongs(this@MainActivity)
-                }
-                localSongs = currentLocal
-
-                val finalTrackPaths = mutableListOf<String>()
-                val newlyDownloadedPaths = mutableListOf<String>()
-                var skippedCount = 0
-                var downloadedCount = 0
-
-                for ((idx, track) in tracks.withIndex()) {
-                    withContext(Dispatchers.Main) {
-                        progressDialog.setMessage("Checking tracks (${idx + 1}/${tracks.size}):\n${track.title.ifBlank { track.filename }}")
-                    }
-
-                    // Check if track already exists locally
-                    val existingSong = currentLocal.firstOrNull {
-                        it.filename.equals(track.filename, ignoreCase = true) ||
-                        (it.title.isNotBlank() && it.title.equals(track.title, ignoreCase = true) &&
-                         it.artist.isNotBlank() && it.artist.equals(track.artist, ignoreCase = true))
-                    }
-                    val targetFile = File(musicDir, track.filename)
-
-                    if (existingSong != null && File(existingSong.filepath).exists()) {
-                        finalTrackPaths.add(existingSong.filepath)
-                        skippedCount++
-                        withContext(Dispatchers.Main) {
-                            logAdapter.addLog("[SYNC-SKIP] Track already on device: ${track.filename}")
+                val (downloadedCount, m3uFile) = syncManager.syncPlaylistFromPeer(
+                    peerIp = ip,
+                    peerPort = port,
+                    playlist = playlist,
+                    targetBitrate = bitrate,
+                    onProgress = { current, total, song, percent, message ->
+                        runOnUiThread {
+                            progressDialog.setMessage("Downloading ($current/$total) [$percent%]:\n${song.title.ifBlank { song.filename }}")
                         }
-                    } else if (targetFile.exists() && targetFile.length() > 0) {
-                        finalTrackPaths.add(targetFile.absolutePath)
-                        skippedCount++
-                        withContext(Dispatchers.Main) {
-                            logAdapter.addLog("[SYNC-SKIP] File already exists: ${targetFile.name}")
-                        }
-                    } else {
-                        // Download track from desktop with chosen bitrate
-                        withContext(Dispatchers.Main) {
-                            progressDialog.setMessage("Downloading (${idx + 1}/${tracks.size}) @ $bitrate:\n${track.title.ifBlank { track.filename }}")
-                        }
-
-                        val success = apiClient.downloadSong(
-                            ip = ip,
-                            port = port,
-                            remoteFilepath = track.filepath,
-                            destFile = targetFile,
-                            bitrate = bitrate
-                        )
-
-                        if (success && targetFile.exists()) {
-                            finalTrackPaths.add(targetFile.absolutePath)
-                            newlyDownloadedPaths.add(targetFile.absolutePath)
-                            downloadedCount++
-                            withContext(Dispatchers.Main) {
-                                logAdapter.addLog("[SYNC-DL] Downloaded '${targetFile.name}' ($bitrate)")
-                            }
-                        } else {
-                            withContext(Dispatchers.Main) {
-                                logAdapter.addLog("[SYNC-ERR] Failed downloading '${track.filename}'")
-                            }
-                        }
+                    },
+                    onLog = { msg ->
+                        runOnUiThread { logAdapter.addLog(msg) }
                     }
-                }
+                )
 
-                // Scan newly downloaded files into MediaStore
-                if (newlyDownloadedPaths.isNotEmpty()) {
-                    withContext(Dispatchers.Main) {
-                        progressDialog.setMessage("Updating device media index...")
-                    }
-                    withContext(Dispatchers.IO) {
-                        MediaScannerHelper.scanFiles(this@MainActivity, newlyDownloadedPaths)
-                    }
-                }
-
-                // Save synced playlist into local playlist store
-                playlistManager.syncRemotePlaylist(playlist.name, finalTrackPaths)
-
-                // Refresh UI
                 withContext(Dispatchers.Main) {
-                    progressDialog.dismiss()
+                    if (progressDialog.isShowing) {
+                        progressDialog.dismiss()
+                    }
                     loadLocalLibrary()
                     switchPlaylistMode(MODE_LOCAL)
                     loadLocalPlaylists()
 
-                    val summary = "Synced \"${playlist.name}\": $downloadedCount downloaded, $skippedCount skipped"
+                    val exportMsg = if (m3uFile != null) "\nPoweramp playlist exported: ${m3uFile.name}" else ""
+                    val summary = "Synced \"${playlist.name}\": $downloadedCount track(s) downloaded.$exportMsg"
                     Toast.makeText(this@MainActivity, summary, Toast.LENGTH_LONG).show()
-                    logAdapter.addLog("[SYNC-COMPLETE] $summary")
+                    logAdapter.addLog("[PLAYLIST-SYNC-SUCCESS] $summary")
                 }
-
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) {
-                    progressDialog.dismiss()
+                    if (progressDialog.isShowing) {
+                        progressDialog.dismiss()
+                    }
                     Toast.makeText(this@MainActivity, "Sync failed: ${e.message}", Toast.LENGTH_LONG).show()
-                    logAdapter.addLog("[SYNC-ERROR] Playlist sync error: ${e.message}")
+                    logAdapter.addLog("[PLAYLIST-SYNC-ERR] ${e.message}")
                 }
             }
         }
@@ -1804,8 +2815,8 @@ class MainActivity : AppCompatActivity() {
                 val name = input.text.toString().trim()
                 if (name.isNotEmpty()) {
                     if (isRemote) {
-                        val ip = etDesktopIp?.text?.toString()?.trim() ?: prefs.desktopIp
-                        val port = etDesktopPort?.text?.toString()?.toIntOrNull() ?: prefs.desktopPort
+                        val ip = getTargetPeerIp()
+                        val port = getTargetPeerPort()
                         lifecycleScope.launch {
                             try {
                                 val pl = apiClient.createPlaylist(ip, port, name)
@@ -1888,7 +2899,7 @@ class MainActivity : AppCompatActivity() {
                 )
                 Toast.makeText(
                     this,
-                    "✓ Added \"${matchedSong.title.ifBlank { matchedSong.filename }}\" → ${absentSong.playlistName}",
+                    "Added \"${matchedSong.title.ifBlank { matchedSong.filename }}\" → ${absentSong.playlistName}",
                     Toast.LENGTH_SHORT
                 ).show()
                 // Refresh playlist view if open
@@ -2024,6 +3035,49 @@ class MainActivity : AppCompatActivity() {
     // PERMISSIONS & LIFECYCLE
     // ==========================================
 
+    private fun hasAllFilesAccess(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Environment.isExternalStorageManager()
+        } else {
+            ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+        }
+    }
+
+    private fun checkAllFilesAccess() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
+            requestAllFilesAccessDialog()
+        }
+    }
+
+    private fun requestAllFilesAccessDialog(onDismiss: (() -> Unit)? = null) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            if (!Environment.isExternalStorageManager()) {
+                AlertDialog.Builder(this)
+                    .setTitle("Storage Permission Required")
+                    .setMessage("Android requires 'All files access' for Music Sync to save downloaded music files, export Poweramp playlists, and organize your music library.\n\nPlease tap 'Grant Access' and toggle 'Allow access to manage all files' for Music Sync.")
+                    .setPositiveButton("Grant Access") { _, _ ->
+                        try {
+                            val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                                data = Uri.parse("package:$packageName")
+                            }
+                            startActivity(intent)
+                        } catch (e: Exception) {
+                            try {
+                                val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                                startActivity(intent)
+                            } catch (e2: Exception) {
+                                Toast.makeText(this, "Could not open storage settings", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                    .setNegativeButton("Later") { _, _ ->
+                        onDismiss?.invoke()
+                    }
+                    .show()
+            }
+        }
+    }
+
     private fun checkPermissions() {
         val permissions = mutableListOf<String>()
 
@@ -2047,6 +3101,7 @@ class MainActivity : AppCompatActivity() {
             ActivityCompat.requestPermissions(this, permissions.toTypedArray(), PERMISSION_REQUEST_CODE)
         } else {
             loadLocalLibrary()
+            checkAllFilesAccess()
         }
     }
 
@@ -2055,16 +3110,30 @@ class MainActivity : AppCompatActivity() {
         if (requestCode == PERMISSION_REQUEST_CODE) {
             val allGranted = grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }
             if (allGranted) {
-                logAdapter.addLog("[PERMISSIONS] Storage permissions granted.")
+                logAdapter.addLog("[PERMISSIONS] Media permissions granted.")
                 loadLocalLibrary()
             } else {
-                logAdapter.addLog("[WARN] Storage permissions denied. Library scan may be empty.")
+                logAdapter.addLog("[WARN] Media permissions denied. Library scan may be empty.")
                 Toast.makeText(this, "Storage permission is required to read & save music", Toast.LENGTH_LONG).show()
+            }
+            checkAllFilesAccess()
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (hasAllFilesAccess() || (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_AUDIO) == PackageManager.PERMISSION_GRANTED)) {
+            if (localSongs.isEmpty()) {
+                loadLocalLibrary()
             }
         }
     }
 
     override fun onDestroy() {
+        try {
+            com.aruncs.musicsync.server.SyncForegroundService.onLogReceived = null
+            com.aruncs.musicsync.server.SyncForegroundService.onStateChanged = null
+        } catch (ignored: Throwable) {}
         PeerDiscoveryManager.stopListener()
         audioPlayer.release()
         super.onDestroy()

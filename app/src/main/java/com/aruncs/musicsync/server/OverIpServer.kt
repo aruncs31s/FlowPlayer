@@ -4,13 +4,17 @@ import android.content.Context
 import com.aruncs.musicsync.data.AppPreferences
 import com.aruncs.musicsync.data.MediaScannerHelper
 import com.aruncs.musicsync.data.MediaStoreHelper
+import com.aruncs.musicsync.data.AudioTranscoderHelper
+import com.aruncs.musicsync.data.PlaylistManager
 import com.aruncs.musicsync.model.Song
+import com.aruncs.musicsync.data.CrashLogger
 import fi.iki.elonen.NanoHTTPD
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.net.URLDecoder
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -22,9 +26,12 @@ class OverIpServer(
 ) : NanoHTTPD(port) {
 
     private val prefs = AppPreferences(context)
+    private val playlistManager = PlaylistManager(context)
 
     private fun log(msg: String) {
-        logCallback?.invoke(msg)
+        try {
+            logCallback?.invoke(msg)
+        } catch (ignored: Throwable) {}
     }
 
     override fun serve(session: IHTTPSession): Response {
@@ -42,6 +49,8 @@ class OverIpServer(
             val response = when (uri) {
                 "/api/ping" -> handlePing()
                 "/api/songs" -> handleSongs(session)
+                "/api/playlists" -> handlePlaylists()
+                "/api/playlist/tracks" -> handlePlaylistTracks(session)
                 "/api/song/stream" -> handleStreamSong(session)
                 "/api/song/upload" -> handleUploadSong(session)
                 "/api/song/delete" -> handleDeleteSong(session)
@@ -49,8 +58,9 @@ class OverIpServer(
             }
             addCorsHeaders(response)
             response
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             log("[ERROR] Server error handling $uri: ${e.message}")
+            CrashLogger.logPlayerError("OverIpServer", "Server error handling $uri: ${e.message}", e)
             val errorRes = newFixedLengthResponse(
                 Response.Status.INTERNAL_ERROR,
                 "application/json",
@@ -96,59 +106,234 @@ class OverIpServer(
         return newFixedLengthResponse(Response.Status.OK, "application/json", jsonArray.toString())
     }
 
-    private fun handleStreamSong(session: IHTTPSession): Response {
-        val params = session.parameters
-        val filepath = params["filepath"]?.firstOrNull() ?: params["file"]?.firstOrNull()
+    private fun handlePlaylists(): Response {
+        val playlists = playlistManager.getLocalPlaylists()
+        val jsonArray = JSONArray()
+        for (p in playlists) {
+            jsonArray.put(p.toJSONObject())
+        }
+        log("[SERVER] Handled /api/playlists — dispatched ${playlists.size} playlist(s)")
+        return newFixedLengthResponse(Response.Status.OK, "application/json", jsonArray.toString())
+    }
 
-        if (filepath.isNullOrBlank()) {
-            return newFixedLengthResponse(Response.Status.BAD_REQUEST, "application/json", "{\"error\": \"Missing filepath parameter\"}")
+    private fun handlePlaylistTracks(session: IHTTPSession): Response {
+        val params = session.parameters
+        val idParam = params["id"]?.firstOrNull()?.toLongOrNull()
+        val nameParam = params["name"]?.firstOrNull()
+
+        val playlists = playlistManager.getLocalPlaylists()
+        val playlist = if (idParam != null) {
+            playlists.firstOrNull { it.id == idParam }
+        } else if (!nameParam.isNullOrBlank()) {
+            playlists.firstOrNull { it.name.equals(nameParam, ignoreCase = true) }
+        } else null
+
+        if (playlist == null) {
+            return newFixedLengthResponse(Response.Status.NOT_FOUND, "application/json", "{\"error\": \"Playlist not found\"}")
         }
 
-        val file = File(filepath)
-        if (!file.exists() || !file.isFile) {
-            log("[SERVER] Stream 404: File not found: $filepath")
-            return newFixedLengthResponse(Response.Status.NOT_FOUND, "application/json", "{\"error\": \"File not found\"}")
+        val allSongs = MediaStoreHelper.getAllDeviceSongs(context)
+        val songs = playlistManager.getPlaylistSongs(playlist, allSongs)
+        val jsonArray = JSONArray()
+        for (s in songs) {
+            jsonArray.put(s.toJSONObject())
+        }
+        log("[SERVER] Handled /api/playlist/tracks for '${playlist.name}' — dispatched ${songs.size} track(s)")
+        return newFixedLengthResponse(Response.Status.OK, "application/json", jsonArray.toString())
+    }
+
+    private fun handleStreamSong(session: IHTTPSession): Response {
+        val params = session.parameters
+        val rawFilepath = params["filepath"]?.firstOrNull() ?: params["file"]?.firstOrNull()
+        val rawFilename = params["filename"]?.firstOrNull()
+
+        if (rawFilepath.isNullOrBlank() && rawFilename.isNullOrBlank()) {
+            return newFixedLengthResponse(Response.Status.BAD_REQUEST, "application/json", "{\"error\": \"Missing filepath or filename parameter\"}")
+        }
+
+        val originalFile = resolveSongFile(rawFilepath, rawFilename)
+        if (originalFile == null || !originalFile.exists() || !originalFile.isFile) {
+            log("[SERVER] Stream 404: File not found: filepath='$rawFilepath', filename='$rawFilename'")
+            return newFixedLengthResponse(Response.Status.NOT_FOUND, "application/json", "{\"error\": \"File not found on device\"}")
+        }
+
+        val targetBitrate = params["target_bitrate"]?.firstOrNull()?.toIntOrNull()
+            ?: params["bitrate"]?.firstOrNull()?.toIntOrNull()
+
+        val file = try {
+            if (targetBitrate != null && AudioTranscoderHelper.needsDownconversion(originalFile, targetBitrate)) {
+                log("[SERVER] Downconverting ${originalFile.name} to ${targetBitrate}k AAC on-the-fly...")
+                AudioTranscoderHelper.transcodeAudio(originalFile, targetBitrate, context.cacheDir)
+            } else {
+                originalFile
+            }
+        } catch (t: Throwable) {
+            log("[SERVER] Downconversion error for ${originalFile.name}: ${t.message}. Serving original.")
+            originalFile
         }
 
         val fileLen = file.length()
         val mimeType = getMimeType(file.name)
         val rangeHeader = session.headers["range"]
 
-        if (rangeHeader != null && rangeHeader.startsWith("bytes=")) {
-            val rangeVal = rangeHeader.substring(6)
-            var start = 0L
-            var end = fileLen - 1
+        return try {
+            if (rangeHeader != null && rangeHeader.startsWith("bytes=")) {
+                val rangeVal = rangeHeader.substring(6)
+                var start = 0L
+                var end = fileLen - 1
 
-            val dashIndex = rangeVal.indexOf('-')
-            if (dashIndex != -1) {
-                val startStr = rangeVal.substring(0, dashIndex).trim()
-                val endStr = rangeVal.substring(dashIndex + 1).trim()
-                if (startStr.isNotEmpty()) start = startStr.toLongOrNull() ?: 0L
-                if (endStr.isNotEmpty()) end = endStr.toLongOrNull() ?: (fileLen - 1)
+                val dashIndex = rangeVal.indexOf('-')
+                if (dashIndex != -1) {
+                    val startStr = rangeVal.substring(0, dashIndex).trim()
+                    val endStr = rangeVal.substring(dashIndex + 1).trim()
+                    if (startStr.isNotEmpty()) start = startStr.toLongOrNull() ?: 0L
+                    if (endStr.isNotEmpty()) end = endStr.toLongOrNull() ?: (fileLen - 1)
+                }
+
+                if (start > end || start >= fileLen) {
+                    val res = newFixedLengthResponse(Response.Status.RANGE_NOT_SATISFIABLE, "text/plain", "")
+                    res.addHeader("Content-Range", "bytes */$fileLen")
+                    return res
+                }
+
+                val contentLength = end - start + 1
+                val fis = FileInputStream(file)
+                if (start > 0) {
+                    fis.skip(start)
+                }
+
+                val res = newFixedLengthResponse(Response.Status.PARTIAL_CONTENT, mimeType, fis, contentLength)
+                res.addHeader("Content-Range", "bytes $start-$end/$fileLen")
+                res.addHeader("Accept-Ranges", "bytes")
+                res.addHeader("Content-Length", contentLength.toString())
+                res
+            } else {
+                val fis = FileInputStream(file)
+                val res = newFixedLengthResponse(Response.Status.OK, mimeType, fis, fileLen)
+                res.addHeader("Accept-Ranges", "bytes")
+                res.addHeader("Content-Length", fileLen.toString())
+                res
             }
-
-            if (start > end || start >= fileLen) {
-                val res = newFixedLengthResponse(Response.Status.RANGE_NOT_SATISFIABLE, "text/plain", "")
-                res.addHeader("Content-Range", "bytes */$fileLen")
-                return res
-            }
-
-            val contentLength = end - start + 1
-            val fis = FileInputStream(file)
-            fis.skip(start)
-
-            val res = newFixedLengthResponse(Response.Status.PARTIAL_CONTENT, mimeType, fis, contentLength)
-            res.addHeader("Content-Range", "bytes $start-$end/$fileLen")
-            res.addHeader("Accept-Ranges", "bytes")
-            res.addHeader("Content-Length", contentLength.toString())
-            return res
-        } else {
-            val fis = FileInputStream(file)
-            val res = newFixedLengthResponse(Response.Status.OK, mimeType, fis, fileLen)
-            res.addHeader("Accept-Ranges", "bytes")
-            res.addHeader("Content-Length", fileLen.toString())
-            return res
+        } catch (e: Throwable) {
+            log("[SERVER] Error streaming file ${file.name}: ${e.message}")
+            CrashLogger.logPlayerError("OverIpServer", "Error streaming file ${file.name}", e)
+            newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "application/json", "{\"error\": \"Streaming error: ${e.message}\"}")
         }
+    }
+
+    /**
+     * Resolves audio file location using a 6-tier fallback system:
+     * 1. Direct path check
+     * 2. URL-decoded variations (percent decoding, '+' replaced with ' ')
+     * 3. musicStorageDirectory/<filename>
+     * 4. musicStorageDirectory/ADB/<filename>
+     * 5. Recursive search in musicStorageDirectory
+     * 6. MediaStore query by filename, title, or path
+     */
+    private fun resolveSongFile(rawFilepath: String?, rawFilename: String?): File? {
+        if (rawFilepath.isNullOrBlank() && rawFilename.isNullOrBlank()) return null
+
+        val candidatePaths = LinkedHashSet<String>()
+
+        // 1 & 2. Direct path and URL-decoded variations
+        if (!rawFilepath.isNullOrBlank()) {
+            candidatePaths.add(rawFilepath)
+            try {
+                val dec = URLDecoder.decode(rawFilepath, "UTF-8")
+                candidatePaths.add(dec)
+                candidatePaths.add(rawFilepath.replace('+', ' '))
+                candidatePaths.add(dec.replace('+', ' '))
+            } catch (ignored: Throwable) {}
+        }
+
+        for (p in candidatePaths) {
+            try {
+                val f = File(p)
+                if (f.exists() && f.isFile) return f
+            } catch (ignored: Throwable) {}
+        }
+
+        // Collect all potential filenames
+        val candidateNames = LinkedHashSet<String>()
+        if (!rawFilename.isNullOrBlank()) {
+            candidateNames.add(rawFilename)
+            try {
+                val dec = URLDecoder.decode(rawFilename, "UTF-8")
+                candidateNames.add(dec)
+                candidateNames.add(rawFilename.replace('+', ' '))
+                candidateNames.add(dec.replace('+', ' '))
+            } catch (ignored: Throwable) {}
+        }
+        for (p in candidatePaths) {
+            try {
+                val name = File(p).name
+                if (name.isNotBlank()) {
+                    candidateNames.add(name)
+                }
+            } catch (ignored: Throwable) {}
+        }
+
+        val musicDir = prefs.musicStorageDirectory
+
+        // 3. Look in musicStorageDirectory
+        for (name in candidateNames) {
+            try {
+                val f = File(musicDir, name)
+                if (f.exists() && f.isFile) return f
+            } catch (ignored: Throwable) {}
+        }
+
+        // 4. Look in ADB subfolder
+        val adbDir = File(musicDir, "ADB")
+        for (name in candidateNames) {
+            try {
+                val f = File(adbDir, name)
+                if (f.exists() && f.isFile) return f
+            } catch (ignored: Throwable) {}
+        }
+
+        // 5. Search subdirectories of musicStorageDirectory recursively
+        for (name in candidateNames) {
+            try {
+                val found = searchDirectoryRecursive(musicDir, name, maxDepth = 3)
+                if (found != null && found.exists() && found.isFile) return found
+            } catch (ignored: Throwable) {}
+        }
+
+        // 6. Match against MediaStore database
+        try {
+            val allSongs = MediaStoreHelper.getAllDeviceSongs(context)
+            for (name in candidateNames) {
+                val cleanName = name.lowercase(Locale.US)
+                val cleanWithoutExt = File(name).nameWithoutExtension.lowercase(Locale.US)
+                val matched = allSongs.firstOrNull { s ->
+                    s.filename.equals(name, ignoreCase = true) ||
+                    s.filename.lowercase(Locale.US) == cleanName ||
+                    s.title.lowercase(Locale.US) == cleanWithoutExt ||
+                    File(s.filepath).name.equals(name, ignoreCase = true)
+                }
+                if (matched != null) {
+                    val f = File(matched.filepath)
+                    if (f.exists() && f.isFile) return f
+                }
+            }
+        } catch (ignored: Throwable) {}
+
+        return null
+    }
+
+    private fun searchDirectoryRecursive(dir: File, targetFilename: String, maxDepth: Int): File? {
+        if (!dir.exists() || !dir.isDirectory || maxDepth <= 0) return null
+        val files = dir.listFiles() ?: return null
+        for (f in files) {
+            if (f.isFile && f.name.equals(targetFilename, ignoreCase = true)) {
+                return f
+            } else if (f.isDirectory && !f.name.startsWith(".")) {
+                val sub = searchDirectoryRecursive(f, targetFilename, maxDepth - 1)
+                if (sub != null) return sub
+            }
+        }
+        return null
     }
 
     private fun handleUploadSong(session: IHTTPSession): Response {
@@ -202,20 +387,28 @@ class OverIpServer(
         }
 
         val filepath = jsonObj.optString("filepath")
-        if (filepath.isEmpty()) {
+        val filename = jsonObj.optString("filename")
+        if (filepath.isEmpty() && filename.isEmpty()) {
             return newFixedLengthResponse(Response.Status.BAD_REQUEST, "application/json", "{\"error\": \"Missing filepath parameter\"}")
         }
 
-        val file = File(filepath)
-        if (file.exists()) {
-            file.delete()
-            MediaScannerHelper.scanFile(context, filepath)
-            log("[SERVER] Deleted file on device: $filepath")
-            val json = JSONObject().apply {
-                put("status", "success")
-                put("message", "Deleted ${file.name}")
+        val file = resolveSongFile(filepath.ifEmpty { null }, filename.ifEmpty { null })
+        if (file != null && file.exists()) {
+            try {
+                val path = file.absolutePath
+                val name = file.name
+                file.delete()
+                MediaScannerHelper.scanFile(context, path)
+                log("[SERVER] Deleted file on device: $path")
+                val json = JSONObject().apply {
+                    put("status", "success")
+                    put("message", "Deleted $name")
+                }
+                return newFixedLengthResponse(Response.Status.OK, "application/json", json.toString())
+            } catch (t: Throwable) {
+                log("[SERVER] Error deleting file: ${t.message}")
+                return newFixedLengthResponse(Response.Status.INTERNAL_ERROR, "application/json", "{\"error\": \"Failed to delete: ${t.message}\"}")
             }
-            return newFixedLengthResponse(Response.Status.OK, "application/json", json.toString())
         } else {
             return newFixedLengthResponse(Response.Status.NOT_FOUND, "application/json", "{\"error\": \"File not found\"}")
         }

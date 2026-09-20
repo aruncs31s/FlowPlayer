@@ -35,6 +35,7 @@ class PlaylistsAdapter(
     override fun getItemCount(): Int = playlists.size
 
     inner class PlaylistViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
+        private val ivIcon: android.widget.ImageView = itemView.findViewById(R.id.iv_playlist_icon)
         private val tvName: TextView = itemView.findViewById(R.id.tv_playlist_name)
         private val tvCount: TextView = itemView.findViewById(R.id.tv_playlist_count)
         private val btnPlay: ImageButton = itemView.findViewById(R.id.btn_playlist_play)
@@ -42,6 +43,7 @@ class PlaylistsAdapter(
         private val btnDelete: ImageButton = itemView.findViewById(R.id.btn_playlist_delete)
 
         fun bind(playlist: Playlist) {
+            ivIcon.setImageResource(if (playlist.id == -1L) R.drawable.ic_favorite else R.drawable.ic_queue_music)
             tvName.text = playlist.name
             tvCount.text = "${playlist.trackCount} ${if (playlist.trackCount == 1) "track" else "tracks"}"
 
