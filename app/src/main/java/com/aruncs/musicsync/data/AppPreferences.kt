@@ -36,6 +36,10 @@ class AppPreferences(context: Context) {
         get() = prefs.getString("download_quality", "original") ?: "original"
         set(value) = prefs.edit().putString("download_quality", value).apply()
 
+    var streamQuality: String
+        get() = prefs.getString("stream_quality", "original") ?: "original"
+        set(value) = prefs.edit().putString("stream_quality", value).apply()
+
     val musicStorageDirectory: File
         get() {
             val dir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC)

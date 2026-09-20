@@ -187,77 +187,6 @@
                 android:paddingEnd="20dp"
                 android:paddingBottom="24dp">
 
-                <!-- Sticky Target Device Bar -->
-                <LinearLayout
-                    android:id="@+id/bar_fp_device_target"
-                    android:layout_width="match_parent"
-                    android:layout_height="36dp"
-                    android:layout_marginBottom="8dp"
-                    android:background="@drawable/bg_card"
-                    android:clickable="true"
-                    android:focusable="true"
-                    android:gravity="center_vertical"
-                    android:orientation="horizontal"
-                    android:paddingStart="10dp"
-                    android:paddingEnd="10dp">
-
-                    <ImageView
-                        android:id="@+id/iv_fp_target_device_icon"
-                        android:layout_width="16dp"
-                        android:layout_height="16dp"
-                        android:src="@drawable/ic_sync"
-                        android:tint="@color/yellow_primary" />
-
-                    <TextView
-                        android:id="@+id/tv_fp_target_device_label"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_marginStart="8dp"
-                        android:layout_weight="1"
-                        android:ellipsize="end"
-                        android:fontFamily="sans-serif-medium"
-                        android:singleLine="true"
-                        android:text="Playback Target: Local Device"
-                        android:textColor="@color/text_primary"
-                        android:textSize="11sp" />
-
-                    <TextView
-                        android:id="@+id/tv_fp_target_device_status"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:layout_marginEnd="6dp"
-                        android:fontFamily="monospace"
-                        android:text="Ready"
-                        android:textColor="@color/text_muted"
-                        android:textSize="10sp" />
-
-                    <TextView
-                        android:id="@+id/badge_fp_target_mode"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:background="@drawable/bg_badge_green"
-                        android:fontFamily="monospace"
-                        android:paddingStart="6dp"
-                        android:paddingTop="2dp"
-                        android:paddingEnd="6dp"
-                        android:paddingBottom="2dp"
-                        android:text="LOCAL"
-                        android:textColor="@color/status_online"
-                        android:textSize="9sp"
-                        android:textStyle="bold" />
-
-                    <ImageButton
-                        android:id="@+id/btn_fp_device_switch"
-                        android:layout_width="36dp"
-                        android:layout_height="36dp"
-                        android:layout_marginStart="6dp"
-                        android:background="?attr/selectableItemBackgroundBorderless"
-                        android:contentDescription="Switch Device"
-                        android:padding="7dp"
-                        android:src="@drawable/ic_computer"
-                        android:tint="@color/yellow_primary" />
-                </LinearLayout>
-
                 <!-- Top Header Row -->
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -292,9 +221,20 @@
                     </LinearLayout>
 
                     <ImageButton
+                        android:id="@+id/btn_fp_device_switch"
+                        android:layout_width="36dp"
+                        android:layout_height="36dp"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:contentDescription="Switch Device"
+                        android:padding="7dp"
+                        android:src="@drawable/ic_computer"
+                        android:tint="@color/yellow_primary" />
+
+                    <ImageButton
                         android:id="@+id/btn_fp_info"
                         android:layout_width="36dp"
                         android:layout_height="36dp"
+                        android:layout_marginStart="4dp"
                         android:background="?attr/selectableItemBackgroundBorderless"
                         android:contentDescription="Audio Info / Tags"
                         android:padding="7dp"

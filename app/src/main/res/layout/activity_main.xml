@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/bg_dark"
@@ -7,7 +8,7 @@
     android:focusable="true"
     android:focusableInTouchMode="true">
 
-    <!-- Top Branding & Status Bar -->
+    <!-- Top Status Bar -->
     <LinearLayout
         android:id="@+id/layout_top_bar"
         android:layout_width="match_parent"
@@ -19,43 +20,48 @@
         android:paddingStart="16dp"
         android:paddingEnd="16dp">
 
-        <LinearLayout
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
-
-            <View
-                android:layout_width="10dp"
-                android:layout_height="10dp"
-                android:background="@color/yellow_primary" />
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:fontFamily="sans-serif-black"
-                android:letterSpacing="0.04"
-                android:text="MUSIC SYNC"
-                android:textColor="@color/text_primary"
-                android:textSize="17sp"
-                android:textStyle="bold" />
-        </LinearLayout>
-
         <TextView
             android:id="@+id/tv_main_ip_badge"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:background="@drawable/bg_badge_yellow"
             android:fontFamily="monospace"
-            android:paddingStart="10dp"
+            android:paddingStart="8dp"
             android:paddingTop="4dp"
-            android:paddingEnd="10dp"
+            android:paddingEnd="8dp"
             android:paddingBottom="4dp"
-            android:text="Wi-Fi: Scanning..."
+            android:text="IP: --"
             android:textColor="@color/yellow_primary"
             android:textSize="11sp" />
+
+        <View
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
+        <ImageView
+            android:id="@+id/iv_top_device_icon"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:layout_marginEnd="8dp"
+            android:background="@drawable/bg_button_dark"
+            android:clickable="true"
+            android:focusable="true"
+            android:contentDescription="Listening Device"
+            android:padding="8dp"
+            android:src="@drawable/ic_phone_android"
+            app:tint="@color/yellow_primary" />
+
+        <ImageButton
+            android:id="@+id/btn_main_settings"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:background="@drawable/bg_button_dark"
+            app:backgroundTint="@null"
+            android:contentDescription="Settings &amp; About"
+            android:padding="8dp"
+            android:src="@drawable/ic_info"
+            app:tint="@color/yellow_primary" />
     </LinearLayout>
 
     <View

@@ -68,6 +68,7 @@ class PlayerUiController(
         private set
     private var remotePollingJob: Job? = null
     private var latestRemoteSessionState: SessionState? = null
+    private var remoteFailureCount = 0
 
     // Bottom Player Bar views
     private lateinit var playerBarContainer: View
@@ -84,12 +85,7 @@ class PlayerUiController(
     private var playerSeekbar: SeekBar? = null
     private var btnPlayerClose: ImageButton? = null
 
-    // Sticky Target Device Bar views
-    private var barFpDeviceTarget: View? = null
-    private var ivFpTargetDeviceIcon: ImageView? = null
-    private var tvFpTargetDeviceLabel: TextView? = null
-    private var tvFpTargetDeviceStatus: TextView? = null
-    private var badgeFpTargetMode: TextView? = null
+
 
     // Player Screen views (fragment_player)
     private var layoutFpEmpty: View? = null
@@ -287,11 +283,6 @@ class PlayerUiController(
 
     fun initPlayerScreen(playerView: View) {
         // Sticky Target Device Bar
-        barFpDeviceTarget = playerView.findViewById(R.id.bar_fp_device_target)
-        ivFpTargetDeviceIcon = playerView.findViewById(R.id.iv_fp_target_device_icon)
-        tvFpTargetDeviceLabel = playerView.findViewById(R.id.tv_fp_target_device_label)
-        tvFpTargetDeviceStatus = playerView.findViewById(R.id.tv_fp_target_device_status)
-        badgeFpTargetMode = playerView.findViewById(R.id.badge_fp_target_mode)
 
         // Empty / Idle State
         layoutFpEmpty = playerView.findViewById(R.id.layout_fp_empty)
@@ -348,8 +339,7 @@ class PlayerUiController(
         rvFpQueue?.layoutManager = LinearLayoutManager(activity)
         rvFpQueue?.adapter = fpQueueAdapter
 
-        // Device Target Bar Click -> Open Device Picker
-        barFpDeviceTarget?.setOnClickListener { showDevicePicker() }
+        // Device Target Switch -> Open Device Picker
         btnFpDeviceSwitch?.setOnClickListener { showDevicePicker() }
 
         btnFpEmptyBrowse?.setOnClickListener { onNavigateToLibrary() }
@@ -570,6 +560,7 @@ class PlayerUiController(
     }
 
     fun setPlaybackTarget(target: PlaybackTarget) {
+        val previousTarget = currentTarget
         currentTarget = target
         onTargetChanged(target)
         updateTargetDeviceBar()
@@ -578,11 +569,23 @@ class PlayerUiController(
             startRemotePolling(target)
             onLog("[SESSION] Controlling ${target.device.name} (${target.ip}:${target.port})")
             Toast.makeText(activity, "Controlling ${target.device.name}", Toast.LENGTH_SHORT).show()
+
+            // Seamless music flow: transfer currently playing track to newly selected remote device
+            val songToTransfer = audioPlayer.currentSong
+            if (songToTransfer != null && (audioPlayer.isPlaying || previousTarget is PlaybackTarget.Local)) {
+                startPlaybackOnRemote(songToTransfer, audioPlayer.currentPosition, target)
+            }
         } else {
             stopRemotePolling()
             updatePlayerScreenUI(audioPlayer.currentSong)
             onLog("[SESSION] Switched active playback target to This Device")
             Toast.makeText(activity, "Controlling This Device", Toast.LENGTH_SHORT).show()
+
+            // Seamless music flow: if remote was playing, transfer back to local
+            val remoteState = latestRemoteSessionState
+            if (remoteState != null && remoteState.isPlaying) {
+                transferRemoteToLocal()
+            }
         }
     }
 
@@ -601,23 +604,9 @@ class PlayerUiController(
     private fun updateTargetDeviceBar() {
         val target = currentTarget
         if (target is PlaybackTarget.Remote) {
-            ivFpTargetDeviceIcon?.setImageResource(
-                if (target.device.isAndroid) R.drawable.ic_phone_android else R.drawable.ic_computer
-            )
-            tvFpTargetDeviceLabel?.text = "LISTENING ON: ${target.device.name.uppercase(Locale.US)}"
-            tvFpTargetDeviceStatus?.text = "Remote Over-IP (${target.ip}:${target.port})"
-            badgeFpTargetMode?.text = "REMOTE"
-            badgeFpTargetMode?.setTextColor(ContextCompat.getColor(activity, R.color.yellow_primary))
-            badgeFpTargetMode?.setBackgroundResource(R.drawable.bg_badge_yellow)
             btnFpDeviceSwitch?.setImageResource(if (target.device.isAndroid) R.drawable.ic_phone_android else R.drawable.ic_computer)
             btnFpTransferLocal?.visibility = View.VISIBLE
         } else {
-            ivFpTargetDeviceIcon?.setImageResource(R.drawable.ic_phone_android)
-            tvFpTargetDeviceLabel?.text = "LISTENING ON: THIS DEVICE"
-            tvFpTargetDeviceStatus?.text = "Local audio playback"
-            badgeFpTargetMode?.text = "LOCAL"
-            badgeFpTargetMode?.setTextColor(ContextCompat.getColor(activity, R.color.status_online))
-            badgeFpTargetMode?.setBackgroundResource(R.drawable.bg_badge_green)
             btnFpDeviceSwitch?.setImageResource(R.drawable.ic_computer)
             btnFpTransferLocal?.visibility = View.GONE
         }
@@ -625,17 +614,28 @@ class PlayerUiController(
 
     private fun startRemotePolling(remote: PlaybackTarget.Remote) {
         stopRemotePolling()
+        remoteFailureCount = 0
         remotePollingJob = scope.launch {
             while (isActive) {
                 try {
                     val state = apiClient.fetchSessionState(remote.ip, remote.port)
                     withContext(Dispatchers.Main) {
+                        remoteFailureCount = 0
                         latestRemoteSessionState = state
                         if (currentTarget == remote) {
                             renderRemoteState(remote, state)
                         }
                     }
-                } catch (ignored: Exception) {}
+                } catch (_: Exception) {
+                    remoteFailureCount++
+                    if (remoteFailureCount >= 3) {
+                        withContext(Dispatchers.Main) {
+                            if (currentTarget == remote) {
+                                renderRemoteState(remote, null)
+                            }
+                        }
+                    }
+                }
                 delay(1200)
             }
         }
