@@ -279,6 +279,32 @@ class PlayerUiController(
         })
 
         setupAudioPlayerCallbacks()
+
+        audioPlayer.currentSong?.let { song ->
+            tvPlayerTitle?.text = song.title.ifBlank { song.filename }
+            tvPlayerArtist?.text = song.artist.ifBlank { "Unknown Artist" }
+            val isPlaying = audioPlayer.isPlaying
+            btnPlayerPlayPause?.setImageResource(if (isPlaying) R.drawable.ic_pause else R.drawable.ic_play)
+            updatePlayerControlsState()
+            updatePlayerLikeButton(song)
+            updateShuffleButton(audioPlayer.isShuffled)
+            updateRepeatButton(audioPlayer.repeatMode)
+
+            val totalMs = audioPlayer.duration
+            val currentMs = audioPlayer.currentPosition
+            if (totalMs > 0) {
+                val ratio = (currentMs.toFloat() / totalMs.toFloat()) * 1000f
+                playerSeekbar?.progress = ratio.toInt()
+                val curMin = currentMs / 1000 / 60
+                val curSec = (currentMs / 1000) % 60
+                val totMin = totalMs / 1000 / 60
+                val totSec = (totalMs / 1000) % 60
+                tvPlayerTime?.text = String.format(Locale.US, "%02d:%02d / %02d:%02d", curMin, curSec, totMin, totSec)
+            }
+        }
+        if (::playerBarContainer.isInitialized) {
+            playerBarContainer.visibility = if (audioPlayer.currentSong != null && currentTab != 2) View.VISIBLE else View.GONE
+        }
     }
 
     fun initPlayerScreen(playerView: View) {
@@ -463,6 +489,11 @@ class PlayerUiController(
         })
 
         updateTargetDeviceBar()
+        if (currentTarget is PlaybackTarget.Remote) {
+            renderRemoteState(currentTarget as PlaybackTarget.Remote, latestRemoteSessionState)
+        } else {
+            updatePlayerScreenUI(audioPlayer.currentSong)
+        }
     }
 
     private fun setupAudioPlayerCallbacks() {
@@ -566,7 +597,20 @@ class PlayerUiController(
         updateTargetDeviceBar()
 
         if (target is PlaybackTarget.Remote) {
+            tvFpTitle?.text = "Connecting to ${target.device.name}..."
+            tvFpArtist?.text = target.device.name
             startRemotePolling(target)
+            scope.launch {
+                try {
+                    val state = apiClient.fetchSessionState(target.ip, target.port)
+                    withContext(Dispatchers.Main) {
+                        if (currentTarget == target) {
+                            latestRemoteSessionState = state
+                            renderRemoteState(target, state)
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
             onLog("[SESSION] Controlling ${target.device.name} (${target.ip}:${target.port})")
             Toast.makeText(activity, "Controlling ${target.device.name}", Toast.LENGTH_SHORT).show()
 
@@ -994,6 +1038,19 @@ class PlayerUiController(
         updatePlayerScreenQueue()
         updatePlayerScreenLike(song)
         updatePlayerScreenControls()
+
+        val totalMs = audioPlayer.duration
+        val currentMs = audioPlayer.currentPosition
+        if (totalMs > 0) {
+            val ratio = (currentMs.toFloat() / totalMs.toFloat()) * 1000f
+            fpSeekbar?.progress = ratio.toInt()
+            val curMin = currentMs / 1000 / 60
+            val curSec = (currentMs / 1000) % 60
+            val totMin = totalMs / 1000 / 60
+            val totSec = (totalMs / 1000) % 60
+            tvFpCurrentTime?.text = String.format(Locale.US, "%02d:%02d", curMin, curSec)
+            tvFpTotalTime?.text = String.format(Locale.US, "%02d:%02d", totMin, totSec)
+        }
 
         scope.launch(Dispatchers.IO) {
             val streamUrl = if (isRemote) getStreamUrl(song) else null

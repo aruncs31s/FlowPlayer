@@ -20,8 +20,8 @@
     <string name="hint_desktop_ip">192.168.1.100</string>
     <string name="hint_desktop_port">5000</string>
     <string name="btn_ping_desktop">Ping Desktop</string>
-    <string name="btn_sync_pull">Pull from Desktop</string>
-    <string name="btn_sync_push">Push to Desktop</string>
+    <string name="btn_sync_pull">Pull</string>
+    <string name="btn_sync_push">Push</string>
 
     <!-- Library Screen -->
     <string name="title_music_library">Local Music Library</string>
