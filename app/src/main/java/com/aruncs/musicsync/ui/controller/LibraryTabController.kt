@@ -162,6 +162,8 @@ class LibraryTabController(
         )
         rvLibrarySongs?.layoutManager = LinearLayoutManager(activity)
         rvLibrarySongs?.adapter = songsAdapter
+        rvLibrarySongs?.setHasFixedSize(true)
+        rvLibrarySongs?.setItemViewCacheSize(25)
 
         btnTabLocal?.setOnClickListener { switchLibraryMode(MODE_LOCAL) }
         btnTabRemote?.setOnClickListener { switchLibraryMode(MODE_REMOTE) }

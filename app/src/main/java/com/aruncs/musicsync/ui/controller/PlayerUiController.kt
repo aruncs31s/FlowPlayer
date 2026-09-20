@@ -281,8 +281,10 @@ class PlayerUiController(
         setupAudioPlayerCallbacks()
 
         audioPlayer.currentSong?.let { song ->
+            val artistText = song.artist.ifBlank { "Unknown Artist" }
+            val albumText = if (song.album.isNotBlank() && song.album != "Unknown Album") " • ${song.album}" else ""
             tvPlayerTitle?.text = song.title.ifBlank { song.filename }
-            tvPlayerArtist?.text = song.artist.ifBlank { "Unknown Artist" }
+            tvPlayerArtist?.text = "$artistText$albumText"
             val isPlaying = audioPlayer.isPlaying
             btnPlayerPlayPause?.setImageResource(if (isPlaying) R.drawable.ic_pause else R.drawable.ic_play)
             updatePlayerControlsState()
@@ -364,6 +366,8 @@ class PlayerUiController(
         )
         rvFpQueue?.layoutManager = LinearLayoutManager(activity)
         rvFpQueue?.adapter = fpQueueAdapter
+        rvFpQueue?.setHasFixedSize(true)
+        rvFpQueue?.setItemViewCacheSize(20)
 
         // Device Target Switch -> Open Device Picker
         btnFpDeviceSwitch?.setOnClickListener { showDevicePicker() }
@@ -504,8 +508,10 @@ class PlayerUiController(
                     if (currentTab != 2) { // TAB_PLAYER = 2
                         playerBarContainer.visibility = View.VISIBLE
                     }
+                    val artistText = song.artist.ifBlank { "Unknown Artist" }
+                    val albumText = if (song.album.isNotBlank() && song.album != "Unknown Album") " • ${song.album}" else ""
                     tvPlayerTitle?.text = song.title.ifBlank { song.filename }
-                    tvPlayerArtist?.text = song.artist.ifBlank { "Unknown Artist" }
+                    tvPlayerArtist?.text = "$artistText$albumText"
                     val isPlaying = audioPlayer.isPlaying
                     btnPlayerPlayPause?.setImageResource(if (isPlaying) R.drawable.ic_pause else R.drawable.ic_play)
                     onActiveSongChanged(song, isPlaying)
@@ -758,7 +764,8 @@ class PlayerUiController(
 
         btnFpPlayPause?.setImageResource(if (state.isPlaying) R.drawable.ic_pause else R.drawable.ic_play)
         tvFpQueuePos?.text = "Playing on ${remote.device.name}"
-        tvFpQueueCount?.text = "${state.queueSize} in queue"
+        tvFpQueueCount?.text = if (state.queueSize > 0) "${state.queueSize} in queue" else "0 in queue"
+        fpQueueAdapter.submitQueue(emptyList(), -1)
     }
 
     fun startPlaybackOnRemote(
@@ -1080,16 +1087,26 @@ class PlayerUiController(
     }
 
     fun updatePlayerScreenQueue() {
+        if (currentTarget is PlaybackTarget.Remote) {
+            val rem = currentTarget as PlaybackTarget.Remote
+            tvFpQueuePos?.text = "Playing on ${rem.device.name}"
+            val sz = latestRemoteSessionState?.queueSize ?: 0
+            tvFpQueueCount?.text = if (sz > 0) "$sz in queue" else "0 in queue"
+            fpQueueAdapter.submitQueue(emptyList(), -1)
+            return
+        }
+
         val q = audioPlayer.queue
         val qIdx = audioPlayer.currentIndex
         if (q.isNotEmpty() && qIdx >= 0) {
             tvFpQueuePos?.text = "Track ${qIdx + 1} of ${q.size}"
             tvFpQueueCount?.text = "${q.size} tracks"
+            fpQueueAdapter.submitQueue(q, qIdx)
         } else {
             tvFpQueuePos?.text = "Now Playing"
             tvFpQueueCount?.text = "0 tracks"
+            fpQueueAdapter.submitQueue(emptyList(), -1)
         }
-        fpQueueAdapter.submitQueue(q, qIdx)
     }
 
     fun updatePlayerScreenControls() {

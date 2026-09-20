@@ -8,6 +8,7 @@ import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.core.content.ContextCompat
+import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
 import com.aruncs.musicsync.R
 import com.aruncs.musicsync.model.Song
@@ -34,11 +35,25 @@ class SongsAdapter(
         private set
     private var currentSearchQuery: String = ""
 
+    private var colorYellow: Int = 0
+    private var colorTextPrimary: Int = 0
+    private var colorTextMuted: Int = 0
+    private var colorBlack: Int = Color.BLACK
+    private val colorLikePink: Int = Color.parseColor("#FFFF0055")
+
     companion object {
         const val FILTER_ALL = 0
         const val FILTER_DOWNLOADED = 1
         const val FILTER_NOT_DOWNLOADED = 2
         const val FILTER_LIKED = 3
+    }
+
+    override fun onAttachedToRecyclerView(recyclerView: RecyclerView) {
+        super.onAttachedToRecyclerView(recyclerView)
+        val context = recyclerView.context
+        colorYellow = ContextCompat.getColor(context, R.color.yellow_primary)
+        colorTextPrimary = ContextCompat.getColor(context, R.color.text_primary)
+        colorTextMuted = ContextCompat.getColor(context, R.color.text_muted)
     }
 
     fun submitList(songs: List<Song>) {
@@ -70,9 +85,19 @@ class SongsAdapter(
     }
 
     fun setActiveSong(song: Song?, isPlaying: Boolean) {
+        val oldSong = this.activeSong
+        val oldPlaying = this.isPlaying
+        if (oldSong?.id == song?.id && oldPlaying == isPlaying) return
+
         this.activeSong = song
         this.isPlaying = isPlaying
-        notifyDataSetChanged()
+
+        val oldIdx = displayedSongs.indexOfFirst { it.id == oldSong?.id }
+        val newIdx = displayedSongs.indexOfFirst { it.id == song?.id }
+
+        if (oldIdx >= 0) notifyItemChanged(oldIdx)
+        if (newIdx >= 0 && newIdx != oldIdx) notifyItemChanged(newIdx)
+        if (oldIdx < 0 && newIdx < 0) notifyDataSetChanged()
     }
 
     private fun applyFilter() {
@@ -108,8 +133,16 @@ class SongsAdapter(
             }
         }
 
+        val oldList = this.displayedSongs
         this.displayedSongs = filtered
-        notifyDataSetChanged()
+        DiffUtil.calculateDiff(object : DiffUtil.Callback() {
+            override fun getOldListSize(): Int = oldList.size
+            override fun getNewListSize(): Int = filtered.size
+            override fun areItemsTheSame(oldItemPosition: Int, newItemPosition: Int): Boolean =
+                oldList[oldItemPosition].id == filtered[newItemPosition].id
+            override fun areContentsTheSame(oldItemPosition: Int, newItemPosition: Int): Boolean =
+                oldList[oldItemPosition] == filtered[newItemPosition]
+        }).dispatchUpdatesTo(this)
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): SongViewHolder {
@@ -125,7 +158,8 @@ class SongsAdapter(
 
     inner class SongViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         private val tvTitle: TextView = itemView.findViewById(R.id.tv_song_title)
-        private val tvSubtitle: TextView = itemView.findViewById(R.id.tv_song_subtitle)
+        private val tvArtist: TextView = itemView.findViewById(R.id.tv_song_artist)
+        private val tvAlbum: TextView = itemView.findViewById(R.id.tv_song_album)
         private val tvDuration: TextView = itemView.findViewById(R.id.tv_song_duration)
         private val tvMeta: TextView = itemView.findViewById(R.id.tv_song_meta)
         private val btnPlay: ImageButton = itemView.findViewById(R.id.btn_song_play)
@@ -135,36 +169,69 @@ class SongsAdapter(
         private val btnQueue: ImageButton = itemView.findViewById(R.id.btn_song_queue)
         private val btnDelete: ImageButton = itemView.findViewById(R.id.btn_song_delete)
 
+        init {
+            btnLike.setOnClickListener {
+                val pos = bindingAdapterPosition
+                if (pos in displayedSongs.indices) onLikeClick?.invoke(displayedSongs[pos])
+            }
+            btnDownload.setOnClickListener {
+                val pos = bindingAdapterPosition
+                if (pos in displayedSongs.indices) onDownloadClick?.invoke(displayedSongs[pos])
+            }
+            btnQueue.setOnClickListener {
+                val pos = bindingAdapterPosition
+                if (pos in displayedSongs.indices) onAddToQueueClick?.invoke(displayedSongs[pos])
+            }
+            btnQueue.setOnLongClickListener {
+                val pos = bindingAdapterPosition
+                if (pos in displayedSongs.indices) onMoreOptionsClick?.invoke(displayedSongs[pos])
+                true
+            }
+            btnDelete.setOnClickListener {
+                val pos = bindingAdapterPosition
+                if (pos in displayedSongs.indices) onDeleteClick?.invoke(displayedSongs[pos])
+            }
+            val playListener = View.OnClickListener {
+                val pos = bindingAdapterPosition
+                if (pos in displayedSongs.indices) onPlayClick(displayedSongs[pos])
+            }
+            btnPlay.setOnClickListener(playListener)
+            itemView.setOnClickListener(playListener)
+            itemView.setOnLongClickListener {
+                val pos = bindingAdapterPosition
+                if (pos in displayedSongs.indices) onMoreOptionsClick?.invoke(displayedSongs[pos])
+                true
+            }
+        }
+
         fun bind(song: Song) {
             tvTitle.text = song.title.ifBlank { song.filename }
-            tvSubtitle.text = "${song.artist.ifBlank { "Unknown Artist" }} • ${song.album.ifBlank { "Unknown Album" }}"
+            tvArtist.text = song.artist.ifBlank { "Unknown Artist" }
+            tvAlbum.text = if (song.album.isNotBlank() && song.album != "Unknown Album") song.album else "Music Sync Library"
             tvDuration.text = song.durationFormatted
             tvMeta.text = song.sizeFormatted
 
             val isActive = activeSong?.id == song.id || (activeSong?.filename == song.filename && activeSong?.title == song.title)
             if (isActive) {
-                tvTitle.setTextColor(ContextCompat.getColor(itemView.context, R.color.yellow_primary))
+                tvTitle.setTextColor(colorYellow)
                 btnPlay.setImageResource(if (isPlaying) R.drawable.ic_pause else R.drawable.ic_play)
                 btnPlay.setBackgroundResource(R.drawable.bg_button_yellow)
-                btnPlay.setColorFilter(ContextCompat.getColor(itemView.context, R.color.black))
+                btnPlay.setColorFilter(colorBlack)
             } else {
-                tvTitle.setTextColor(ContextCompat.getColor(itemView.context, R.color.text_primary))
+                tvTitle.setTextColor(colorTextPrimary)
                 btnPlay.setImageResource(R.drawable.ic_play)
                 btnPlay.setBackgroundResource(R.drawable.bg_button_dark)
-                btnPlay.setColorFilter(ContextCompat.getColor(itemView.context, R.color.text_primary))
+                btnPlay.setColorFilter(colorTextPrimary)
             }
 
             // Liked State
             val isLiked = likedFilepaths.contains(song.filepath) || likedFilepaths.contains(song.filename.lowercase(Locale.US))
             if (isLiked) {
                 btnLike.setImageResource(R.drawable.ic_favorite)
-                btnLike.setColorFilter(Color.parseColor("#FFFF0055"))
+                btnLike.setColorFilter(colorLikePink)
             } else {
                 btnLike.setImageResource(R.drawable.ic_favorite_border)
-                btnLike.setColorFilter(ContextCompat.getColor(itemView.context, R.color.text_muted))
-            }
-            btnLike.setOnClickListener {
-                onLikeClick?.invoke(song)
+                btnLike.setColorFilter(colorTextMuted)
             }
 
             if (isRemoteMode) {
@@ -177,10 +244,7 @@ class SongsAdapter(
                     btnDownload.visibility = View.VISIBLE
                     btnDownload.isEnabled = true
                     btnDownload.alpha = 1.0f
-                    btnDownload.setColorFilter(ContextCompat.getColor(itemView.context, R.color.yellow_primary))
-                    btnDownload.setOnClickListener {
-                        onDownloadClick?.invoke(song)
-                    }
+                    btnDownload.setColorFilter(colorYellow)
                 }
             } else {
                 ivDownloadedBadge.visibility = View.GONE
@@ -188,28 +252,7 @@ class SongsAdapter(
             }
 
             btnQueue.visibility = View.VISIBLE
-            btnQueue.setOnClickListener {
-                onAddToQueueClick?.invoke(song)
-            }
-            btnQueue.setOnLongClickListener {
-                onMoreOptionsClick?.invoke(song)
-                true
-            }
-
             btnDelete.visibility = View.VISIBLE
-            btnDelete.setOnClickListener {
-                onDeleteClick?.invoke(song)
-            }
-
-            val clickListener = View.OnClickListener {
-                onPlayClick(song)
-            }
-            btnPlay.setOnClickListener(clickListener)
-            itemView.setOnClickListener(clickListener)
-            itemView.setOnLongClickListener {
-                onMoreOptionsClick?.invoke(song)
-                true
-            }
         }
     }
 }
