@@ -1,77 +1,78 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/bg_dark"
     android:orientation="vertical">
 
-    <!-- Logs Header -->
+    <!-- Logs Header (Row 1: Title) -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:paddingStart="12dp"
+        android:paddingStart="16dp"
         android:paddingTop="12dp"
-        android:paddingEnd="12dp"
-        android:paddingBottom="8dp">
+        android:paddingEnd="16dp"
+        android:paddingBottom="4dp">
 
         <TextView
-            android:layout_width="0dp"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
             android:ellipsize="end"
             android:maxLines="1"
             android:text="@string/title_sync_terminal"
             android:textColor="@color/text_primary"
-            android:textSize="16sp"
+            android:textSize="18sp"
             android:textStyle="bold" />
+    </LinearLayout>
+
+    <!-- Logs Header (Row 2: Action Buttons) -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingBottom="8dp">
 
         <LinearLayout
-            android:layout_width="wrap_content"
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal">
 
             <Button
-                android:id="@+id/btn_logs_query"
-                android:layout_width="wrap_content"
-                android:layout_height="30dp"
-                android:layout_marginEnd="4dp"
-                android:background="@drawable/bg_button_dark"
-                android:minWidth="0dp"
-                android:paddingStart="8dp"
-                android:paddingEnd="8dp"
-                android:text="Query"
-                android:textAllCaps="false"
-                android:textColor="@color/yellow_primary"
-                android:textSize="11sp" />
-
-            <Button
                 android:id="@+id/btn_logs_crash"
-                android:layout_width="wrap_content"
-                android:layout_height="30dp"
-                android:layout_marginEnd="4dp"
+                android:layout_width="0dp"
+                android:layout_height="34dp"
+                android:layout_weight="1"
+                android:layout_marginEnd="8dp"
                 android:background="@drawable/bg_button_dark"
-                android:minWidth="0dp"
+                app:backgroundTint="@null"
+                android:gravity="center"
                 android:paddingStart="8dp"
                 android:paddingEnd="8dp"
                 android:text="Crash"
-                android:textAllCaps="false"
                 android:textColor="@color/yellow_primary"
-                android:textSize="11sp" />
+                android:textSize="12sp"
+                android:textStyle="bold" />
 
             <Button
                 android:id="@+id/btn_logs_clear"
-                android:layout_width="wrap_content"
-                android:layout_height="30dp"
+                android:layout_width="0dp"
+                android:layout_height="34dp"
+                android:layout_weight="1"
                 android:background="@drawable/bg_button_dark"
-                android:minWidth="0dp"
+                app:backgroundTint="@null"
+                android:gravity="center"
                 android:paddingStart="8dp"
                 android:paddingEnd="8dp"
                 android:text="Clear"
-                android:textAllCaps="false"
                 android:textColor="@color/text_muted"
-                android:textSize="11sp" />
+                android:textSize="12sp"
+                android:textStyle="bold" />
         </LinearLayout>
     </LinearLayout>
 

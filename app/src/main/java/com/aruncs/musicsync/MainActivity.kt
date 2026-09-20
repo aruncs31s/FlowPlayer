@@ -45,7 +45,6 @@ import com.aruncs.musicsync.ui.controller.SessionSyncController
 import com.aruncs.musicsync.ui.controller.SyncTabController
 import com.aruncs.musicsync.ui.dialog.AudioInfoDialogHelper
 import com.aruncs.musicsync.ui.dialog.PlaylistDialogsHelper
-import com.aruncs.musicsync.ui.dialog.QueryRunnerDialogHelper
 import com.aruncs.musicsync.ui.dialog.QueueDialogHelper
 import com.aruncs.musicsync.ui.dialog.SessionManagerDialogHelper
 import com.aruncs.musicsync.util.PermissionHelper
@@ -122,7 +121,6 @@ class MainActivity : AppCompatActivity() {
     private var rvLogs: RecyclerView? = null
     private var btnLogsClear: Button? = null
     private var btnLogsCrash: Button? = null
-    private var btnLogsQuery: Button? = null
 
     private var currentTab = TAB_SYNC
 
@@ -359,15 +357,11 @@ class MainActivity : AppCompatActivity() {
         rvLogs = logsView.findViewById(R.id.rv_logs)
         btnLogsClear = logsView.findViewById(R.id.btn_logs_clear)
         btnLogsCrash = logsView.findViewById(R.id.btn_logs_crash)
-        btnLogsQuery = logsView.findViewById(R.id.btn_logs_query)
 
         rvLogs?.layoutManager = LinearLayoutManager(this)
         rvLogs?.adapter = logAdapter
 
         btnLogsClear?.setOnClickListener { logAdapter.clear() }
-        btnLogsQuery?.setOnClickListener {
-            QueryRunnerDialogHelper.show(this)
-        }
         btnLogsCrash?.setOnClickListener {
             val logs = CrashLogger.getCrashLogs(this)
             AlertDialog.Builder(this)
