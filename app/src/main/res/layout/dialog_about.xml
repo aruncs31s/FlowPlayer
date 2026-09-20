@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@drawable/bg_card"
+    android:orientation="vertical"
+    android:padding="20dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="ABOUT MUSIC SYNC"
+        android:textColor="@color/text_primary"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="12dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Version 1.0.0 (Debug)\n\nMusic Sync is a powerful cross-device wireless audio streaming, synchronization, and remote session management app. Easily sync music and playlists between phones, tablets, and desktop servers over Wi-Fi or mobile hotspot.\n\nFeatures:\n• Over-IP streaming and remote playback control\n• Wi-Fi peer discovery &amp; device synchronization\n• Local MediaStore &amp; Poweramp playlist integration\n• Configurable stream &amp; download qualities\n\n© 2025 Music Sync Team."
+        android:textColor="@color/text_secondary"
+        android:textSize="14sp"
+        android:lineSpacingExtra="4dp"
+        android:layout_marginBottom="24dp" />
+
+    <Button
+        android:id="@+id/btn_close_about"
+        android:layout_width="match_parent"
+        android:layout_height="42dp"
+        android:background="@drawable/bg_button_yellow"
+        app:backgroundTint="@null"
+        android:text="Close"
+        android:textColor="@color/black"
+        android:textStyle="bold" />
+
+</LinearLayout>

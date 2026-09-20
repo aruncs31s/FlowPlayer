@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@drawable/bg_card"
+    android:orientation="vertical"
+    android:padding="20dp">
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="APP SETTINGS"
+        android:textColor="@color/text_primary"
+        android:textSize="18sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="16dp" />
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Download Quality"
+        android:textColor="@color/yellow_primary"
+        android:textSize="14sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="8dp" />
+
+    <RadioGroup
+        android:id="@+id/rg_download_quality"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:layout_marginBottom="16dp">
+
+        <RadioButton
+            android:id="@+id/rb_download_original"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Original Quality (Lossless / Unmodified)"
+            android:textColor="@color/text_primary" />
+
+        <RadioButton
+            android:id="@+id/rb_download_320"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="High Quality (320 kbps)"
+            android:textColor="@color/text_primary" />
+
+        <RadioButton
+            android:id="@+id/rb_download_192"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Medium Quality (192 kbps)"
+            android:textColor="@color/text_primary" />
+
+        <RadioButton
+            android:id="@+id/rb_download_128"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Standard Quality (128 kbps)"
+            android:textColor="@color/text_primary" />
+    </RadioGroup>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Stream Quality"
+        android:textColor="@color/yellow_primary"
+        android:textSize="14sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="8dp" />
+
+    <RadioGroup
+        android:id="@+id/rg_stream_quality"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:layout_marginBottom="24dp">
+
+        <RadioButton
+            android:id="@+id/rb_stream_original"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Original Quality (Unmodified Stream)"
+            android:textColor="@color/text_primary" />
+
+        <RadioButton
+            android:id="@+id/rb_stream_320"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="High Quality (320 kbps)"
+            android:textColor="@color/text_primary" />
+
+        <RadioButton
+            android:id="@+id/rb_stream_192"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Medium Quality (192 kbps)"
+            android:textColor="@color/text_primary" />
+
+        <RadioButton
+            android:id="@+id/rb_stream_128"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Standard Quality (128 kbps)"
+            android:textColor="@color/text_primary" />
+    </RadioGroup>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="end">
+
+        <Button
+            android:id="@+id/btn_close_settings"
+            android:layout_width="wrap_content"
+            android:layout_height="40dp"
+            android:layout_marginEnd="8dp"
+            android:background="@drawable/bg_button_dark"
+            app:backgroundTint="@null"
+            android:text="Cancel"
+            android:textColor="@color/text_muted" />
+
+        <Button
+            android:id="@+id/btn_save_settings"
+            android:layout_width="wrap_content"
+            android:layout_height="40dp"
+            android:background="@drawable/bg_button_yellow"
+            app:backgroundTint="@null"
+            android:text="Save"
+            android:textColor="@color/black"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+</LinearLayout>
