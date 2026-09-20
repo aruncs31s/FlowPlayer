@@ -5,25 +5,48 @@
     android:background="@color/bg_dark"
     android:orientation="vertical">
 
-    <!-- Playlists Header -->
+    <!-- Playlists Header (Row 1: Title & Refresh) -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:gravity="center_vertical"
         android:orientation="horizontal"
         android:paddingStart="16dp"
-        android:paddingTop="12dp"
+        android:paddingTop="14dp"
         android:paddingEnd="16dp"
-        android:paddingBottom="8dp">
+        android:paddingBottom="6dp">
 
         <TextView
-            android:layout_width="0dp"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
             android:text="Playlists"
             android:textColor="@color/text_primary"
-            android:textSize="18sp"
+            android:textSize="22sp"
             android:textStyle="bold" />
+
+        <View
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
+
+        <ImageButton
+            android:id="@+id/btn_playlists_refresh"
+            android:layout_width="38dp"
+            android:layout_height="38dp"
+            android:background="@drawable/bg_button_dark"
+            android:contentDescription="Refresh Playlists"
+            android:src="@drawable/ic_sync" />
+    </LinearLayout>
+
+    <!-- Playlists Header (Row 2: Count Badge & Action Buttons) -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="16dp"
+        android:paddingEnd="16dp"
+        android:paddingBottom="10dp">
 
         <TextView
             android:id="@+id/badge_playlists_count"
@@ -40,46 +63,48 @@
             android:textSize="11sp"
             android:textStyle="bold" />
 
-        <TextView
-            android:id="@+id/btn_playlist_import_poweramp"
-            android:layout_width="wrap_content"
-            android:layout_height="36dp"
-            android:layout_marginStart="8dp"
-            android:background="@drawable/bg_button_dark"
-            android:clickable="true"
-            android:focusable="true"
-            android:gravity="center"
-            android:paddingStart="10dp"
-            android:paddingEnd="10dp"
-            android:text="Import Poweramp"
-            android:textColor="@color/yellow_primary"
-            android:textSize="12sp"
-            android:textStyle="bold" />
+        <View
+            android:layout_width="0dp"
+            android:layout_height="0dp"
+            android:layout_weight="1" />
 
-        <TextView
-            android:id="@+id/btn_playlist_create"
+        <LinearLayout
             android:layout_width="wrap_content"
-            android:layout_height="36dp"
-            android:layout_marginStart="8dp"
-            android:background="@drawable/bg_button_yellow"
-            android:clickable="true"
-            android:focusable="true"
-            android:gravity="center"
-            android:paddingStart="12dp"
-            android:paddingEnd="12dp"
-            android:text="+ New"
-            android:textColor="@color/black"
-            android:textSize="12sp"
-            android:textStyle="bold" />
+            android:layout_height="wrap_content"
+            android:gravity="end"
+            android:orientation="horizontal">
 
-        <ImageButton
-            android:id="@+id/btn_playlists_refresh"
-            android:layout_width="36dp"
-            android:layout_height="36dp"
-            android:layout_marginStart="8dp"
-            android:background="@drawable/bg_button_dark"
-            android:contentDescription="Refresh Playlists"
-            android:src="@drawable/ic_sync" />
+            <TextView
+                android:id="@+id/btn_playlist_import_poweramp"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:layout_marginEnd="8dp"
+                android:background="@drawable/bg_button_dark"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center"
+                android:paddingStart="10dp"
+                android:paddingEnd="10dp"
+                android:text="Import Poweramp"
+                android:textColor="@color/yellow_primary"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/btn_playlist_create"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:background="@drawable/bg_button_yellow"
+                android:clickable="true"
+                android:focusable="true"
+                android:gravity="center"
+                android:paddingStart="12dp"
+                android:paddingEnd="12dp"
+                android:text="+ New"
+                android:textColor="@color/black"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+        </LinearLayout>
     </LinearLayout>
 
     <!-- Local vs Remote Playlist Tabs -->
@@ -88,7 +113,7 @@
         android:layout_height="42dp"
         android:layout_marginStart="16dp"
         android:layout_marginEnd="16dp"
-        android:layout_marginTop="4dp"
+        android:layout_marginTop="2dp"
         android:layout_marginBottom="12dp"
         android:background="@drawable/bg_card"
         android:orientation="horizontal"
@@ -101,12 +126,12 @@
             android:layout_weight="1"
             android:background="@drawable/bg_button_yellow"
             android:clickable="true"
+            android:ellipsize="end"
             android:focusable="true"
             android:gravity="center"
-            android:singleLine="true"
-            android:ellipsize="end"
             android:paddingStart="6dp"
             android:paddingEnd="6dp"
+            android:singleLine="true"
             android:text="Device (Local)"
             android:textColor="@color/black"
             android:textSize="13sp"
@@ -120,12 +145,12 @@
             android:layout_weight="1"
             android:background="@null"
             android:clickable="true"
+            android:ellipsize="end"
             android:focusable="true"
             android:gravity="center"
-            android:singleLine="true"
-            android:ellipsize="end"
             android:paddingStart="6dp"
             android:paddingEnd="6dp"
+            android:singleLine="true"
             android:text="Peer / Remote"
             android:textColor="@color/text_muted"
             android:textSize="13sp"
@@ -255,8 +280,8 @@
                     android:paddingStart="12dp"
                     android:paddingEnd="12dp"
                     android:text="← Back"
-                    android:textColor="@color/text_primary"
-                    android:textSize="13sp"
+                    android:textColor="@color/yellow_primary"
+                    android:textSize="12sp"
                     android:textStyle="bold" />
 
                 <TextView
@@ -266,7 +291,7 @@
                     android:layout_marginStart="12dp"
                     android:layout_weight="1"
                     android:ellipsize="end"
-                    android:maxLines="1"
+                    android:singleLine="true"
                     android:text="Playlist Name"
                     android:textColor="@color/text_primary"
                     android:textSize="16sp"
@@ -276,15 +301,15 @@
                     android:id="@+id/btn_detail_sync_playlist"
                     android:layout_width="wrap_content"
                     android:layout_height="36dp"
-                    android:layout_marginStart="8dp"
-                    android:background="@drawable/bg_button_dark"
+                    android:layout_marginEnd="8dp"
+                    android:background="@drawable/bg_button_yellow"
                     android:clickable="true"
                     android:focusable="true"
                     android:gravity="center"
                     android:paddingStart="12dp"
                     android:paddingEnd="12dp"
-                    android:text="Sync to Device"
-                    android:textColor="@color/yellow_primary"
+                    android:text="Sync"
+                    android:textColor="@color/black"
                     android:textSize="12sp"
                     android:textStyle="bold"
                     android:visibility="gone" />
@@ -293,15 +318,14 @@
                     android:id="@+id/btn_detail_play_all"
                     android:layout_width="wrap_content"
                     android:layout_height="36dp"
-                    android:layout_marginStart="8dp"
-                    android:background="@drawable/bg_button_yellow"
+                    android:background="@drawable/bg_button_dark"
                     android:clickable="true"
                     android:focusable="true"
                     android:gravity="center"
-                    android:paddingStart="14dp"
-                    android:paddingEnd="14dp"
-                    android:text="Play All"
-                    android:textColor="@color/black"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:text="▶ Play All"
+                    android:textColor="@color/yellow_primary"
                     android:textSize="12sp"
                     android:textStyle="bold" />
             </LinearLayout>
@@ -316,8 +340,9 @@
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:gravity="center"
+                android:lineSpacingExtra="4dp"
                 android:padding="32dp"
-                android:text="No songs in this playlist yet.\nAdd songs from the Library tab!"
+                android:text="No tracks in playlist"
                 android:textColor="@color/text_muted"
                 android:textSize="14sp"
                 android:visibility="gone" />
@@ -327,9 +352,9 @@
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:clipToPadding="false"
+                android:paddingTop="8dp"
                 android:paddingBottom="16dp" />
         </LinearLayout>
-
     </FrameLayout>
 
 </LinearLayout>

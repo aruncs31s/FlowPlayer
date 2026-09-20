@@ -68,6 +68,7 @@ class PlayerUiController(
         private set
     private var remotePollingJob: Job? = null
     private var latestRemoteSessionState: SessionState? = null
+    private var remoteFailureCount = 0
 
     // Bottom Player Bar views
     private lateinit var playerBarContainer: View
@@ -84,12 +85,7 @@ class PlayerUiController(
     private var playerSeekbar: SeekBar? = null
     private var btnPlayerClose: ImageButton? = null
 
-    // Sticky Target Device Bar views
-    private var barFpDeviceTarget: View? = null
-    private var ivFpTargetDeviceIcon: ImageView? = null
-    private var tvFpTargetDeviceLabel: TextView? = null
-    private var tvFpTargetDeviceStatus: TextView? = null
-    private var badgeFpTargetMode: TextView? = null
+
 
     // Player Screen views (fragment_player)
     private var layoutFpEmpty: View? = null
@@ -283,15 +279,36 @@ class PlayerUiController(
         })
 
         setupAudioPlayerCallbacks()
+
+        audioPlayer.currentSong?.let { song ->
+            tvPlayerTitle?.text = song.title.ifBlank { song.filename }
+            tvPlayerArtist?.text = song.artist.ifBlank { "Unknown Artist" }
+            val isPlaying = audioPlayer.isPlaying
+            btnPlayerPlayPause?.setImageResource(if (isPlaying) R.drawable.ic_pause else R.drawable.ic_play)
+            updatePlayerControlsState()
+            updatePlayerLikeButton(song)
+            updateShuffleButton(audioPlayer.isShuffled)
+            updateRepeatButton(audioPlayer.repeatMode)
+
+            val totalMs = audioPlayer.duration
+            val currentMs = audioPlayer.currentPosition
+            if (totalMs > 0) {
+                val ratio = (currentMs.toFloat() / totalMs.toFloat()) * 1000f
+                playerSeekbar?.progress = ratio.toInt()
+                val curMin = currentMs / 1000 / 60
+                val curSec = (currentMs / 1000) % 60
+                val totMin = totalMs / 1000 / 60
+                val totSec = (totalMs / 1000) % 60
+                tvPlayerTime?.text = String.format(Locale.US, "%02d:%02d / %02d:%02d", curMin, curSec, totMin, totSec)
+            }
+        }
+        if (::playerBarContainer.isInitialized) {
+            playerBarContainer.visibility = if (audioPlayer.currentSong != null && currentTab != 2) View.VISIBLE else View.GONE
+        }
     }
 
     fun initPlayerScreen(playerView: View) {
         // Sticky Target Device Bar
-        barFpDeviceTarget = playerView.findViewById(R.id.bar_fp_device_target)
-        ivFpTargetDeviceIcon = playerView.findViewById(R.id.iv_fp_target_device_icon)
-        tvFpTargetDeviceLabel = playerView.findViewById(R.id.tv_fp_target_device_label)
-        tvFpTargetDeviceStatus = playerView.findViewById(R.id.tv_fp_target_device_status)
-        badgeFpTargetMode = playerView.findViewById(R.id.badge_fp_target_mode)
 
         // Empty / Idle State
         layoutFpEmpty = playerView.findViewById(R.id.layout_fp_empty)
@@ -348,8 +365,7 @@ class PlayerUiController(
         rvFpQueue?.layoutManager = LinearLayoutManager(activity)
         rvFpQueue?.adapter = fpQueueAdapter
 
-        // Device Target Bar Click -> Open Device Picker
-        barFpDeviceTarget?.setOnClickListener { showDevicePicker() }
+        // Device Target Switch -> Open Device Picker
         btnFpDeviceSwitch?.setOnClickListener { showDevicePicker() }
 
         btnFpEmptyBrowse?.setOnClickListener { onNavigateToLibrary() }
@@ -473,6 +489,11 @@ class PlayerUiController(
         })
 
         updateTargetDeviceBar()
+        if (currentTarget is PlaybackTarget.Remote) {
+            renderRemoteState(currentTarget as PlaybackTarget.Remote, latestRemoteSessionState)
+        } else {
+            updatePlayerScreenUI(audioPlayer.currentSong)
+        }
     }
 
     private fun setupAudioPlayerCallbacks() {
@@ -570,19 +591,45 @@ class PlayerUiController(
     }
 
     fun setPlaybackTarget(target: PlaybackTarget) {
+        val previousTarget = currentTarget
         currentTarget = target
         onTargetChanged(target)
         updateTargetDeviceBar()
 
         if (target is PlaybackTarget.Remote) {
+            tvFpTitle?.text = "Connecting to ${target.device.name}..."
+            tvFpArtist?.text = target.device.name
             startRemotePolling(target)
+            scope.launch {
+                try {
+                    val state = apiClient.fetchSessionState(target.ip, target.port)
+                    withContext(Dispatchers.Main) {
+                        if (currentTarget == target) {
+                            latestRemoteSessionState = state
+                            renderRemoteState(target, state)
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
             onLog("[SESSION] Controlling ${target.device.name} (${target.ip}:${target.port})")
             Toast.makeText(activity, "Controlling ${target.device.name}", Toast.LENGTH_SHORT).show()
+
+            // Seamless music flow: transfer currently playing track to newly selected remote device
+            val songToTransfer = audioPlayer.currentSong
+            if (songToTransfer != null && (audioPlayer.isPlaying || previousTarget is PlaybackTarget.Local)) {
+                startPlaybackOnRemote(songToTransfer, audioPlayer.currentPosition, target)
+            }
         } else {
             stopRemotePolling()
             updatePlayerScreenUI(audioPlayer.currentSong)
             onLog("[SESSION] Switched active playback target to This Device")
             Toast.makeText(activity, "Controlling This Device", Toast.LENGTH_SHORT).show()
+
+            // Seamless music flow: if remote was playing, transfer back to local
+            val remoteState = latestRemoteSessionState
+            if (remoteState != null && remoteState.isPlaying) {
+                transferRemoteToLocal()
+            }
         }
     }
 
@@ -601,23 +648,9 @@ class PlayerUiController(
     private fun updateTargetDeviceBar() {
         val target = currentTarget
         if (target is PlaybackTarget.Remote) {
-            ivFpTargetDeviceIcon?.setImageResource(
-                if (target.device.isAndroid) R.drawable.ic_phone_android else R.drawable.ic_computer
-            )
-            tvFpTargetDeviceLabel?.text = "LISTENING ON: ${target.device.name.uppercase(Locale.US)}"
-            tvFpTargetDeviceStatus?.text = "Remote Over-IP (${target.ip}:${target.port})"
-            badgeFpTargetMode?.text = "REMOTE"
-            badgeFpTargetMode?.setTextColor(ContextCompat.getColor(activity, R.color.yellow_primary))
-            badgeFpTargetMode?.setBackgroundResource(R.drawable.bg_badge_yellow)
             btnFpDeviceSwitch?.setImageResource(if (target.device.isAndroid) R.drawable.ic_phone_android else R.drawable.ic_computer)
             btnFpTransferLocal?.visibility = View.VISIBLE
         } else {
-            ivFpTargetDeviceIcon?.setImageResource(R.drawable.ic_phone_android)
-            tvFpTargetDeviceLabel?.text = "LISTENING ON: THIS DEVICE"
-            tvFpTargetDeviceStatus?.text = "Local audio playback"
-            badgeFpTargetMode?.text = "LOCAL"
-            badgeFpTargetMode?.setTextColor(ContextCompat.getColor(activity, R.color.status_online))
-            badgeFpTargetMode?.setBackgroundResource(R.drawable.bg_badge_green)
             btnFpDeviceSwitch?.setImageResource(R.drawable.ic_computer)
             btnFpTransferLocal?.visibility = View.GONE
         }
@@ -625,17 +658,28 @@ class PlayerUiController(
 
     private fun startRemotePolling(remote: PlaybackTarget.Remote) {
         stopRemotePolling()
+        remoteFailureCount = 0
         remotePollingJob = scope.launch {
             while (isActive) {
                 try {
                     val state = apiClient.fetchSessionState(remote.ip, remote.port)
                     withContext(Dispatchers.Main) {
+                        remoteFailureCount = 0
                         latestRemoteSessionState = state
                         if (currentTarget == remote) {
                             renderRemoteState(remote, state)
                         }
                     }
-                } catch (ignored: Exception) {}
+                } catch (_: Exception) {
+                    remoteFailureCount++
+                    if (remoteFailureCount >= 3) {
+                        withContext(Dispatchers.Main) {
+                            if (currentTarget == remote) {
+                                renderRemoteState(remote, null)
+                            }
+                        }
+                    }
+                }
                 delay(1200)
             }
         }
@@ -669,7 +713,7 @@ class PlayerUiController(
             tvFpEmptyTitle?.text = "${remote.device.name} is Idle"
             tvFpEmptySubtitle?.text = "No track currently playing on ${remote.device.name}."
             btnFpEmptyResumeRemote?.visibility = View.VISIBLE
-            btnFpEmptyResumeRemote?.text = "▶  Start / Resume on ${remote.device.name}"
+            btnFpEmptyResumeRemote?.text = ":> Start / Resume on ${remote.device.name}"
 
             val localSong = audioPlayer.currentSong
             if (localSong != null) {
@@ -995,11 +1039,34 @@ class PlayerUiController(
         updatePlayerScreenLike(song)
         updatePlayerScreenControls()
 
+        val totalMs = audioPlayer.duration
+        val currentMs = audioPlayer.currentPosition
+        if (totalMs > 0) {
+            val ratio = (currentMs.toFloat() / totalMs.toFloat()) * 1000f
+            fpSeekbar?.progress = ratio.toInt()
+            val curMin = currentMs / 1000 / 60
+            val curSec = (currentMs / 1000) % 60
+            val totMin = totalMs / 1000 / 60
+            val totSec = (totalMs / 1000) % 60
+            tvFpCurrentTime?.text = String.format(Locale.US, "%02d:%02d", curMin, curSec)
+            tvFpTotalTime?.text = String.format(Locale.US, "%02d:%02d", totMin, totSec)
+        }
+
         scope.launch(Dispatchers.IO) {
+            val bitmap = if (!isRemote) AudioInfoHelper.getEmbeddedArtwork(song) else null
             val streamUrl = if (isRemote) getStreamUrl(song) else null
             val details = AudioInfoHelper.extract(song, streamUrl)
             withContext(Dispatchers.Main) {
                 if (audioPlayer.currentSong?.id == song.id) {
+                    if (bitmap != null) {
+                        ivFpArtwork?.setImageBitmap(bitmap)
+                        ivFpArtwork?.colorFilter = null
+                        ivFpArtwork?.scaleType = ImageView.ScaleType.CENTER_CROP
+                    } else {
+                        ivFpArtwork?.setImageResource(R.drawable.ic_album)
+                        ivFpArtwork?.setColorFilter(ContextCompat.getColor(activity, R.color.card_stroke))
+                        ivFpArtwork?.scaleType = ImageView.ScaleType.CENTER_INSIDE
+                    }
                     tvFpBadgeFormat?.text = details.containerFormat
                     tvFpBadgeBitrate?.text = details.bitrateKbps.replace(" (CBR)", "").replace(" (Lossless)", "")
                     tvFpBadgeSamplerate?.text = if (details.sampleRateHz.contains("(")) {

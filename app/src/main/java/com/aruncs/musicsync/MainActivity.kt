@@ -12,6 +12,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.FrameLayout
+import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -45,9 +46,10 @@ import com.aruncs.musicsync.ui.controller.SessionSyncController
 import com.aruncs.musicsync.ui.controller.SyncTabController
 import com.aruncs.musicsync.ui.dialog.AudioInfoDialogHelper
 import com.aruncs.musicsync.ui.dialog.PlaylistDialogsHelper
-import com.aruncs.musicsync.ui.dialog.QueryRunnerDialogHelper
 import com.aruncs.musicsync.ui.dialog.QueueDialogHelper
 import com.aruncs.musicsync.ui.dialog.SessionManagerDialogHelper
+import com.aruncs.musicsync.ui.dialog.SettingsDialogHelper
+import com.aruncs.musicsync.ui.dialog.AboutDialogHelper
 import com.aruncs.musicsync.util.PermissionHelper
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
@@ -122,7 +124,10 @@ class MainActivity : AppCompatActivity() {
     private var rvLogs: RecyclerView? = null
     private var btnLogsClear: Button? = null
     private var btnLogsCrash: Button? = null
-    private var btnLogsQuery: Button? = null
+
+    // Top Bar Device Indicator
+    private var ivTopDeviceIcon: ImageView? = null
+    private var btnMainSettings: ImageButton? = null
 
     private var currentTab = TAB_SYNC
 
@@ -192,6 +197,24 @@ class MainActivity : AppCompatActivity() {
     private fun initViews() {
         viewPager = findViewById(R.id.view_pager)
         tvMainIpBadge = findViewById(R.id.tv_main_ip_badge)
+        ivTopDeviceIcon = findViewById(R.id.iv_top_device_icon)
+        btnMainSettings = findViewById<ImageButton>(R.id.btn_main_settings)
+
+        btnMainSettings?.setOnClickListener {
+            val options = arrayOf("Settings", "About")
+            AlertDialog.Builder(this)
+                .setTitle("App Options")
+                .setItems(options) { _, which ->
+                    when (which) {
+                        0 -> SettingsDialogHelper.show(this)
+                        1 -> AboutDialogHelper.show(this)
+                    }
+                }
+                .show()
+        }
+        ivTopDeviceIcon?.setOnClickListener {
+            playerController.showDevicePicker()
+        }
 
         navTabSync = findViewById(R.id.nav_tab_sync)
         navTabLibrary = findViewById(R.id.nav_tab_library)
@@ -271,6 +294,7 @@ class MainActivity : AppCompatActivity() {
                 playlistsTabController.playlistDetailAdapter.setActiveSong(song, isPlaying)
             },
             onTargetChanged = { target ->
+                updateTopDeviceIndicator(target)
                 if (target is PlaybackTarget.Remote) {
                     activePeerIp = target.ip
                     activePeerPort = target.port
@@ -359,15 +383,11 @@ class MainActivity : AppCompatActivity() {
         rvLogs = logsView.findViewById(R.id.rv_logs)
         btnLogsClear = logsView.findViewById(R.id.btn_logs_clear)
         btnLogsCrash = logsView.findViewById(R.id.btn_logs_crash)
-        btnLogsQuery = logsView.findViewById(R.id.btn_logs_query)
 
         rvLogs?.layoutManager = LinearLayoutManager(this)
         rvLogs?.adapter = logAdapter
 
         btnLogsClear?.setOnClickListener { logAdapter.clear() }
-        btnLogsQuery?.setOnClickListener {
-            QueryRunnerDialogHelper.show(this)
-        }
         btnLogsCrash?.setOnClickListener {
             val logs = CrashLogger.getCrashLogs(this)
             AlertDialog.Builder(this)
@@ -526,6 +546,16 @@ class MainActivity : AppCompatActivity() {
         } else {
             updateNavTabUI(tab)
             onTabActivated(tab)
+        }
+    }
+
+    fun updateTopDeviceIndicator(target: PlaybackTarget) {
+        if (target is PlaybackTarget.Remote) {
+            ivTopDeviceIcon?.setImageResource(
+                if (target.device.isAndroid) R.drawable.ic_phone_android else R.drawable.ic_computer
+            )
+        } else {
+            ivTopDeviceIcon?.setImageResource(R.drawable.ic_phone_android)
         }
     }
 

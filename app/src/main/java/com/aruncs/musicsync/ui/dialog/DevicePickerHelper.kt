@@ -131,7 +131,7 @@ object DevicePickerHelper {
                             badgeStatus.setTextColor(ContextCompat.getColor(activity, R.color.yellow_primary))
                             badgeStatus.setBackgroundResource(R.drawable.bg_badge_yellow)
                             tvNowPlaying.visibility = View.VISIBLE
-                            tvNowPlaying.text = "⏸ ${sessionState.currentTitle}${if (sessionState.currentArtist.isNotBlank()) " • ${sessionState.currentArtist}" else ""}"
+                            tvNowPlaying.text = "> ${sessionState.currentTitle}${if (sessionState.currentArtist.isNotBlank()) " • ${sessionState.currentArtist}" else ""}"
                         } else {
                             badgeStatus.text = "ONLINE"
                             badgeStatus.setTextColor(ContextCompat.getColor(activity, R.color.status_online))

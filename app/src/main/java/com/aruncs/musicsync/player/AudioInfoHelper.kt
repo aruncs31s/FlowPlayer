@@ -1,5 +1,7 @@
 package com.aruncs.musicsync.player
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.os.Build
 import com.aruncs.musicsync.model.Song
@@ -188,5 +190,27 @@ object AudioInfoHelper {
             filePath = path,
             isRemote = isRemote
         )
+    }
+
+    fun getEmbeddedArtwork(song: Song): Bitmap? {
+        if (song.filepath.isBlank()) return null
+        val f = File(song.filepath)
+        if (!f.exists() || !f.canRead()) return null
+
+        val retriever = MediaMetadataRetriever()
+        return try {
+            retriever.setDataSource(f.absolutePath)
+            val picture = retriever.embeddedPicture
+            if (picture != null) {
+                BitmapFactory.decodeByteArray(picture, 0, picture.size)
+            } else null
+        } catch (_: Exception) {
+            null
+        } finally {
+            try {
+                retriever.release()
+            } catch (_: Exception) {
+            }
+        }
     }
 }

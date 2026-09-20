@@ -1,87 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/bg_dark"
     android:orientation="vertical">
 
-    <!-- 0. STICKY TARGET DEVICE SELECTOR BAR (Spotify Connect Style) -->
-    <LinearLayout
-        android:id="@+id/bar_fp_device_target"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:background="@color/card_dark"
-        android:clickable="true"
-        android:focusable="true"
-        android:foreground="?attr/selectableItemBackground"
-        android:gravity="center_vertical"
-        android:orientation="horizontal"
-        android:paddingStart="16dp"
-        android:paddingTop="10dp"
-        android:paddingEnd="16dp"
-        android:paddingBottom="10dp">
 
-        <ImageView
-            android:id="@+id/iv_fp_target_device_icon"
-            android:layout_width="22dp"
-            android:layout_height="22dp"
-            android:src="@drawable/ic_phone_android"
-            android:tint="@color/yellow_primary" />
-
-        <LinearLayout
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_marginStart="10dp"
-            android:layout_weight="1"
-            android:orientation="vertical">
-
-            <TextView
-                android:id="@+id/tv_fp_target_device_label"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:fontFamily="sans-serif-black"
-                android:letterSpacing="0.04"
-                android:text="LISTENING ON: THIS DEVICE"
-                android:textColor="@color/text_primary"
-                android:textSize="12sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/tv_fp_target_device_status"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Local audio playback"
-                android:textColor="@color/yellow_primary"
-                android:textSize="10sp" />
-        </LinearLayout>
-
-        <TextView
-            android:id="@+id/badge_fp_target_mode"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:background="@drawable/bg_badge_green"
-            android:fontFamily="monospace"
-            android:paddingStart="8dp"
-            android:paddingTop="2dp"
-            android:paddingEnd="8dp"
-            android:paddingBottom="2dp"
-            android:text="LOCAL"
-            android:textColor="@color/status_online"
-            android:textSize="9sp"
-            android:textStyle="bold" />
-
-        <ImageView
-            android:layout_width="18dp"
-            android:layout_height="18dp"
-            android:layout_marginStart="8dp"
-            android:src="@drawable/ic_expand_more"
-            android:tint="@color/text_muted" />
-    </LinearLayout>
-
-    <View
-        android:layout_width="match_parent"
-        android:layout_height="1dp"
-        android:background="@color/card_stroke" />
 
     <!-- CONTENT CONTAINER (Holds Empty/Idle State and Active Player Content) -->
     <FrameLayout
@@ -104,7 +29,7 @@
                 android:layout_width="90dp"
                 android:layout_height="90dp"
                 android:src="@drawable/ic_album"
-                android:tint="@color/card_stroke" />
+                app:tint="@color/card_stroke" />
 
             <TextView
                 android:id="@+id/tv_fp_empty_title"
@@ -149,7 +74,7 @@
                     android:gravity="center"
                     android:paddingStart="24dp"
                     android:paddingEnd="24dp"
-                    android:text="▶  Resume Playback on Device"
+                    android:text="Resume Playback on Device"
                     android:textColor="@color/bg_dark"
                     android:textSize="13sp"
                     android:textStyle="bold"
@@ -348,13 +273,10 @@
                         android:id="@+id/tv_fp_title"
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
-                        android:ellipsize="marquee"
-                        android:fadingEdge="horizontal"
+                        android:ellipsize="end"
                         android:fontFamily="sans-serif-black"
                         android:gravity="center"
-                        android:marqueeRepeatLimit="marquee_forever"
-                        android:scrollHorizontally="true"
-                        android:singleLine="true"
+                        android:maxLines="2"
                         android:text="Song Title"
                         android:textColor="@color/text_primary"
                         android:textSize="20sp"

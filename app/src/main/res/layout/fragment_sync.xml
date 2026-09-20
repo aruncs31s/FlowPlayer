@@ -248,7 +248,7 @@
                     <Button
                         android:id="@+id/btn_ping_desktop"
                         android:layout_width="wrap_content"
-                        android:layout_height="32dp"
+                        android:layout_height="40dp"
                         android:background="@drawable/bg_button_dark"
                         app:backgroundTint="@null"
                         android:paddingStart="10dp"
