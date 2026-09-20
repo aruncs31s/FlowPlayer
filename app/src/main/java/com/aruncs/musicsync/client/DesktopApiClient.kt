@@ -8,6 +8,7 @@ import android.os.Environment
 import android.provider.MediaStore
 import com.aruncs.musicsync.model.Playlist
 import com.aruncs.musicsync.model.Song
+import com.aruncs.musicsync.session.SessionState
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
@@ -412,4 +413,59 @@ class DesktopApiClient {
             response.isSuccessful
         }
     }
+
+    suspend fun fetchSessionState(ip: String, port: Int): SessionState? = withContext(Dispatchers.IO) {
+        try {
+            val url = "${baseUrl(ip, port)}/api/session/state"
+            val request = Request.Builder().url(url).build()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) return@withContext null
+                val body = response.body?.string() ?: return@withContext null
+                SessionState.fromJSON(JSONObject(body))
+            }
+        } catch (e: Exception) { null }
+    }
+
+    private suspend fun sessionPost(ip: String, port: Int, path: String, json: JSONObject? = null): Boolean = withContext(Dispatchers.IO) {
+        try {
+            val body = (json?.toString() ?: "{}").toRequestBody("application/json".toMediaTypeOrNull())
+            val url = "${baseUrl(ip, port)}$path"
+            val request = Request.Builder().url(url).post(body).build()
+            client.newCall(request).execute().use { response -> response.isSuccessful }
+        } catch (e: Exception) { false }
+    }
+
+    suspend fun sessionPlay(ip: String, port: Int) = sessionPost(ip, port, "/api/session/play")
+    suspend fun sessionPause(ip: String, port: Int) = sessionPost(ip, port, "/api/session/pause")
+    suspend fun sessionNext(ip: String, port: Int) = sessionPost(ip, port, "/api/session/next")
+    suspend fun sessionPrev(ip: String, port: Int) = sessionPost(ip, port, "/api/session/prev")
+
+    suspend fun sessionSeek(ip: String, port: Int, positionMs: Int) = sessionPost(
+        ip, port, "/api/session/seek?position_ms=$positionMs"
+    )
+
+    suspend fun sessionQueueInject(
+        ip: String, port: Int,
+        filepath: String, title: String, artist: String, album: String = "",
+        streamUrl: String? = null
+    ) = sessionPost(ip, port, "/api/session/queue_inject", JSONObject().apply {
+        put("filepath", filepath)
+        put("title", title)
+        put("artist", artist)
+        put("album", album)
+        if (!streamUrl.isNullOrBlank()) put("stream_url", streamUrl)
+    })
+
+    suspend fun sessionTransfer(
+        ip: String, port: Int,
+        filepath: String, title: String, artist: String, album: String = "",
+        positionMs: Int = 0, streamUrl: String? = null
+    ) = sessionPost(ip, port, "/api/session/transfer", JSONObject().apply {
+        put("filepath", filepath)
+        put("title", title)
+        put("artist", artist)
+        put("album", album)
+        put("position_ms", positionMs)
+        if (!streamUrl.isNullOrBlank()) put("stream_url", streamUrl)
+    })
 }

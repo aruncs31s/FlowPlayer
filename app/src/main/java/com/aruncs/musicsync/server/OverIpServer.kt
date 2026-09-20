@@ -18,12 +18,24 @@ import java.net.URLDecoder
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import com.aruncs.musicsync.session.SessionState
 
 class OverIpServer(
     private val context: Context,
     port: Int = 5000,
     private val logCallback: ((String) -> Unit)? = null
 ) : NanoHTTPD(port) {
+
+    companion object {
+        var onSessionStateRequest: (() -> SessionState)? = null
+        var onSessionPlay: (() -> Unit)? = null
+        var onSessionPause: (() -> Unit)? = null
+        var onSessionNext: (() -> Unit)? = null
+        var onSessionPrev: (() -> Unit)? = null
+        var onSessionSeek: ((positionMs: Int) -> Unit)? = null
+        var onSessionQueueInject: ((filepath: String, title: String, artist: String, album: String, streamUrl: String?) -> Unit)? = null
+        var onSessionTransfer: ((filepath: String, title: String, artist: String, album: String, positionMs: Int, streamUrl: String?) -> Unit)? = null
+    }
 
     private val prefs = AppPreferences(context)
     private val playlistManager = PlaylistManager(context)
@@ -54,6 +66,14 @@ class OverIpServer(
                 "/api/song/stream" -> handleStreamSong(session)
                 "/api/song/upload" -> handleUploadSong(session)
                 "/api/song/delete" -> handleDeleteSong(session)
+                "/api/session/state" -> handleSessionState()
+                "/api/session/play" -> handleSessionPlay()
+                "/api/session/pause" -> handleSessionPause()
+                "/api/session/next" -> handleSessionNext()
+                "/api/session/prev" -> handleSessionPrev()
+                "/api/session/seek" -> handleSessionSeek(session)
+                "/api/session/queue_inject" -> handleSessionQueueInject(session)
+                "/api/session/transfer" -> handleSessionTransfer(session)
                 else -> newFixedLengthResponse(Response.Status.NOT_FOUND, "application/json", "{\"error\": \"Not Found\"}")
             }
             addCorsHeaders(response)
@@ -423,5 +443,74 @@ class OverIpServer(
             "ogg", "opus" -> "audio/ogg"
             else -> "audio/*"
         }
+    }
+    private fun handleSessionState(): Response {
+        val state = onSessionStateRequest?.invoke()
+        return if (state != null) {
+            newFixedLengthResponse(Response.Status.OK, "application/json", state.toJSON().toString())
+        } else {
+            newFixedLengthResponse(Response.Status.OK, "application/json", "{\"is_playing\":false,\"current_title\":\"\",\"current_artist\":\"\",\"position_ms\":0,\"duration_ms\":0,\"queue_size\":0}")
+        }
+    }
+
+    private fun handleSessionPlay(): Response {
+        onSessionPlay?.invoke()
+        return newFixedLengthResponse(Response.Status.OK, "application/json", "{\"ok\":true}")
+    }
+
+    private fun handleSessionPause(): Response {
+        onSessionPause?.invoke()
+        return newFixedLengthResponse(Response.Status.OK, "application/json", "{\"ok\":true}")
+    }
+
+    private fun handleSessionNext(): Response {
+        onSessionNext?.invoke()
+        return newFixedLengthResponse(Response.Status.OK, "application/json", "{\"ok\":true}")
+    }
+
+    private fun handleSessionPrev(): Response {
+        onSessionPrev?.invoke()
+        return newFixedLengthResponse(Response.Status.OK, "application/json", "{\"ok\":true}")
+    }
+
+    private fun handleSessionSeek(session: IHTTPSession): Response {
+        val posMs = session.parameters["position_ms"]?.firstOrNull()?.toIntOrNull() ?: 0
+        onSessionSeek?.invoke(posMs)
+        return newFixedLengthResponse(Response.Status.OK, "application/json", "{\"ok\":true}")
+    }
+
+    private fun handleSessionQueueInject(session: IHTTPSession): Response {
+        val body = try {
+            val map = mutableMapOf<String, String>()
+            session.parseBody(map)
+            JSONObject(map["postData"] ?: "{}")
+        } catch (e: Exception) { JSONObject() }
+        val filepath = body.optString("filepath", "")
+        val title = body.optString("title", filepath)
+        val artist = body.optString("artist", "")
+        val album = body.optString("album", "")
+        val streamUrl = body.optString("stream_url", "").ifBlank { null }
+        if (filepath.isNotBlank()) {
+            onSessionQueueInject?.invoke(filepath, title, artist, album, streamUrl)
+        }
+        return newFixedLengthResponse(Response.Status.OK, "application/json", "{\"ok\":true}")
+    }
+
+    private fun handleSessionTransfer(session: IHTTPSession): Response {
+        val body = try {
+            val map = mutableMapOf<String, String>()
+            session.parseBody(map)
+            JSONObject(map["postData"] ?: "{}")
+        } catch (e: Exception) { JSONObject() }
+        val filepath = body.optString("filepath", "")
+        val title = body.optString("title", filepath)
+        val artist = body.optString("artist", "")
+        val album = body.optString("album", "")
+        val positionMs = body.optInt("position_ms", 0)
+        val streamUrl = body.optString("stream_url", "").ifBlank { null }
+        if (filepath.isNotBlank()) {
+            onSessionTransfer?.invoke(filepath, title, artist, album, positionMs, streamUrl)
+        }
+        return newFixedLengthResponse(Response.Status.OK, "application/json", "{\"ok\":true}")
     }
 }

@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/bg_dark"
@@ -75,6 +76,7 @@
                 android:layout_height="44dp"
                 android:layout_marginTop="14dp"
                 android:background="@drawable/bg_button_yellow"
+                app:backgroundTint="@null"
                 android:text="@string/btn_start_server"
                 android:textAllCaps="false"
                 android:textColor="@color/black"
@@ -101,7 +103,7 @@
                     android:layout_width="0dp"
                     android:layout_height="wrap_content"
                     android:layout_weight="1"
-                    android:text="Nearby Devices &amp; Peers"
+                    android:text="Connected &amp; Saved Devices"
                     android:textColor="@color/text_primary"
                     android:textSize="17sp"
                     android:textStyle="bold" />
@@ -135,113 +137,167 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="4dp"
-                android:text="Tap any discovered device to connect and sync library or playlists."
+                android:text="Sync music and playlists, or browse remote libraries directly."
                 android:textColor="@color/text_muted"
                 android:textSize="12sp" />
 
-            <!-- Discovered Devices List -->
+            <!-- Top Action Buttons: Add Device & Scan Network -->
             <LinearLayout
-                android:id="@+id/layout_sync_devices_list"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="12dp"
-                android:orientation="vertical" />
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
                 android:orientation="horizontal">
 
                 <Button
-                    android:id="@+id/btn_auto_discover"
+                    android:id="@+id/btn_add_device"
                     android:layout_width="0dp"
-                    android:layout_height="44dp"
+                    android:layout_height="42dp"
                     android:layout_weight="1"
                     android:background="@drawable/bg_button_yellow"
-                    android:text="Scan for Devices"
+                    app:backgroundTint="@null"
+                    android:drawableStart="@drawable/ic_add"
+                    android:drawablePadding="6dp"
+                    android:drawableTint="@color/black"
+                    android:gravity="center"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:text="Add Device"
                     android:textAllCaps="false"
                     android:textColor="@color/black"
                     android:textSize="13sp"
                     android:textStyle="bold" />
 
                 <Button
-                    android:id="@+id/btn_ping_desktop"
+                    android:id="@+id/btn_auto_discover"
                     android:layout_width="0dp"
-                    android:layout_height="44dp"
+                    android:layout_height="42dp"
                     android:layout_marginStart="8dp"
                     android:layout_weight="1"
                     android:background="@drawable/bg_button_dark"
-                    android:text="Test Connection"
+                    app:backgroundTint="@null"
+                    android:drawableStart="@drawable/ic_search"
+                    android:drawablePadding="6dp"
+                    android:drawableTint="@color/yellow_primary"
+                    android:gravity="center"
+                    android:paddingStart="12dp"
+                    android:paddingEnd="12dp"
+                    android:text="Scan Network"
                     android:textAllCaps="false"
                     android:textColor="@color/yellow_primary"
                     android:textSize="13sp"
                     android:textStyle="bold" />
             </LinearLayout>
 
+            <!-- Discovered / Saved Device Cards Container -->
+            <LinearLayout
+                android:id="@+id/layout_sync_devices_list"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:orientation="vertical" />
+
+            <!-- Empty Devices Placeholder -->
+            <TextView
+                android:id="@+id/tv_devices_empty_state"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:layout_marginBottom="8dp"
+                android:background="@drawable/bg_button_dark"
+                android:gravity="center"
+                android:padding="16dp"
+                android:text="No devices configured yet.\nTap '+ Add Device' or 'Scan Network' to connect."
+                android:textColor="@color/text_muted"
+                android:textSize="12sp"
+                android:visibility="gone" />
+
+            <!-- Status Indicator -->
             <TextView
                 android:id="@+id/tv_desktop_status"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
+                android:layout_marginTop="4dp"
                 android:fontFamily="monospace"
-                android:text="Status: Tap 'Scan for Devices' to discover"
+                android:text="Status: Ready"
                 android:textColor="@color/text_muted"
-                android:textSize="12sp" />
+                android:textSize="11sp" />
 
-            <View
-                android:layout_width="match_parent"
-                android:layout_height="1dp"
-                android:layout_marginTop="14dp"
-                android:layout_marginBottom="12dp"
-                android:background="@color/card_stroke" />
-
-            <!-- Active / Manual IP & Port Section -->
-            <TextView
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="Target Device IP &amp; Port:"
-                android:textColor="@color/text_secondary"
-                android:textSize="12sp"
-                android:textStyle="bold" />
-
+            <!-- Manual IP / Direct Connect Collapsible / Quick Section -->
             <LinearLayout
+                android:id="@+id/layout_manual_ip_section"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="6dp"
-                android:orientation="horizontal">
+                android:layout_marginTop="10dp"
+                android:orientation="vertical">
 
-                <EditText
-                    android:id="@+id/et_desktop_ip"
-                    android:layout_width="0dp"
-                    android:layout_height="42dp"
-                    android:layout_weight="3"
-                    android:background="@drawable/bg_input"
-                    android:fontFamily="monospace"
-                    android:hint="@string/hint_desktop_ip"
-                    android:inputType="text"
-                    android:paddingStart="12dp"
-                    android:paddingEnd="12dp"
-                    android:textColor="@color/text_primary"
-                    android:textColorHint="@color/text_muted"
-                    android:textSize="13sp" />
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
 
-                <EditText
-                    android:id="@+id/et_desktop_port"
-                    android:layout_width="0dp"
-                    android:layout_height="42dp"
-                    android:layout_marginStart="8dp"
-                    android:layout_weight="1"
-                    android:background="@drawable/bg_input"
-                    android:fontFamily="monospace"
-                    android:hint="@string/hint_desktop_port"
-                    android:inputType="number"
-                    android:paddingStart="12dp"
-                    android:paddingEnd="12dp"
-                    android:text="5000"
-                    android:textColor="@color/text_primary"
-                    android:textColorHint="@color/text_muted"
-                    android:textSize="13sp" />
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="Active Target IP &amp; Port:"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
+
+                    <Button
+                        android:id="@+id/btn_ping_desktop"
+                        android:layout_width="wrap_content"
+                        android:layout_height="32dp"
+                        android:background="@drawable/bg_button_dark"
+                        app:backgroundTint="@null"
+                        android:paddingStart="10dp"
+                        android:paddingEnd="10dp"
+                        android:text="Ping Test"
+                        android:textAllCaps="false"
+                        android:textColor="@color/yellow_primary"
+                        android:textSize="11sp"
+                        android:textStyle="bold" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="6dp"
+                    android:orientation="horizontal">
+
+                    <EditText
+                        android:id="@+id/et_desktop_ip"
+                        android:layout_width="0dp"
+                        android:layout_height="40dp"
+                        android:layout_weight="3"
+                        android:background="@drawable/bg_input"
+                        android:fontFamily="monospace"
+                        android:hint="@string/hint_desktop_ip"
+                        android:inputType="text"
+                        android:paddingStart="12dp"
+                        android:paddingEnd="12dp"
+                        android:textColor="@color/text_primary"
+                        android:textColorHint="@color/text_muted"
+                        android:textSize="12sp" />
+
+                    <EditText
+                        android:id="@+id/et_desktop_port"
+                        android:layout_width="0dp"
+                        android:layout_height="40dp"
+                        android:layout_marginStart="8dp"
+                        android:layout_weight="1"
+                        android:background="@drawable/bg_input"
+                        android:fontFamily="monospace"
+                        android:hint="@string/hint_desktop_port"
+                        android:inputType="number"
+                        android:paddingStart="12dp"
+                        android:paddingEnd="12dp"
+                        android:text="5000"
+                        android:textColor="@color/text_primary"
+                        android:textColorHint="@color/text_muted"
+                        android:textSize="12sp" />
+                </LinearLayout>
             </LinearLayout>
         </LinearLayout>
 
@@ -282,6 +338,7 @@
                     android:layout_height="44dp"
                     android:layout_weight="1"
                     android:background="@drawable/bg_button_yellow"
+                    app:backgroundTint="@null"
                     android:text="@string/btn_sync_pull"
                     android:textAllCaps="false"
                     android:textColor="@color/black"
@@ -295,6 +352,7 @@
                     android:layout_marginStart="8dp"
                     android:layout_weight="1"
                     android:background="@drawable/bg_button_dark"
+                    app:backgroundTint="@null"
                     android:text="@string/btn_sync_push"
                     android:textAllCaps="false"
                     android:textColor="@color/text_primary"
@@ -360,6 +418,19 @@
             </LinearLayout>
 
         </LinearLayout>
+
+        <!-- Session Manager Button -->
+        <Button
+            android:id="@+id/btn_sessions_manager"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginTop="16dp"
+            android:background="@drawable/bg_button_dark"
+            app:backgroundTint="@null"
+            android:fontFamily="sans-serif-bold"
+            android:text="View Active Sessions"
+            android:textColor="@color/yellow_primary"
+            android:textSize="14sp" />
 
     </LinearLayout>
 </ScrollView>

@@ -33,18 +33,78 @@ object PeerDiscoveryManager {
     private var listenerThread: Thread? = null
 
     /**
+     * Collect all potential broadcast destinations:
+     * 1. 255.255.255.255 (standard fallback)
+     * 2. All interface subnet broadcast addresses (e.g. 10.231.70.255)
+     * 3. Saved Desktop IP from AppPreferences (for direct unicast probe)
+     */
+    fun getBroadcastTargets(context: Context): List<InetAddress> {
+        val targets = mutableListOf<InetAddress>()
+        try {
+            targets.add(InetAddress.getByName("255.255.255.255"))
+        } catch (ignored: Exception) {}
+
+        try {
+            val interfaces = java.net.NetworkInterface.getNetworkInterfaces()
+            while (interfaces.hasMoreElements()) {
+                val intf = interfaces.nextElement()
+                if (intf.isLoopback || !intf.isUp) continue
+                for (addr in intf.interfaceAddresses) {
+                    val bcast = addr.broadcast
+                    if (bcast != null && !targets.contains(bcast)) {
+                        targets.add(bcast)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        try {
+            val prefs = AppPreferences(context)
+            val savedIp = prefs.desktopIp.trim()
+            if (savedIp.isNotBlank() && savedIp != "0.0.0.0" && savedIp != "127.0.0.1") {
+                val target = InetAddress.getByName(savedIp)
+                if (!targets.contains(target)) {
+                    targets.add(target)
+                }
+            }
+        } catch (ignored: Exception) {}
+
+        return targets
+    }
+
+    fun getAllLocalIps(): Set<String> {
+        val ips = mutableSetOf("127.0.0.1", "localhost")
+        try {
+            val interfaces = java.net.NetworkInterface.getNetworkInterfaces()
+            while (interfaces.hasMoreElements()) {
+                val intf = interfaces.nextElement()
+                for (addr in intf.inetAddresses) {
+                    if (addr is java.net.Inet4Address) {
+                        addr.hostAddress?.let { ips.add(it) }
+                    }
+                }
+            }
+        } catch (ignored: Exception) {}
+        return ips
+    }
+
+    /**
      * Broadcast a discovery probe on Wi-Fi / Hotspot to discover both Android and Desktop peers.
      */
     suspend fun discoverAllPeers(
         context: Context,
         timeoutMs: Long = 3000,
+        targetIp: String? = null,
+        targetPort: Int = 5000,
         onPeerFound: ((DiscoveredPeer) -> Unit)? = null,
         onLog: ((String) -> Unit)? = null
     ): List<DiscoveredPeer> = withContext(Dispatchers.IO) {
         acquireMulticastLock(context)
         val peerList = mutableListOf<DiscoveredPeer>()
         val seenAddresses = mutableSetOf<String>()
-        val localIp = NetworkUtils.getWifiIpAddress(context)
+        val localIps = getAllLocalIps()
         var socket: DatagramSocket? = null
 
         try {
@@ -64,11 +124,20 @@ object PeerDiscoveryManager {
                 put("port", prefs.serverPort)
             }.toString().toByteArray(Charsets.UTF_8)
 
-            val broadcastAddr = InetAddress.getByName("255.255.255.255")
-            val packet = DatagramPacket(probe, probe.size, broadcastAddr, DISCOVERY_PORT)
+            val targets = getBroadcastTargets(context).toMutableList()
+            targetIp?.trim()?.takeIf { it.isNotBlank() && it != "0.0.0.0" }?.let {
+                try {
+                    val explicitAddr = InetAddress.getByName(it)
+                    if (!targets.contains(explicitAddr)) targets.add(explicitAddr)
+                } catch (ignored: Exception) {}
+            }
 
-            onLog?.invoke("[DISCOVERY] Broadcasting UDP discovery probe on port $DISCOVERY_PORT...")
-            socket.send(packet)
+            onLog?.invoke("[DISCOVERY] Broadcasting UDP discovery probe to ${targets.size} destination(s) on port $DISCOVERY_PORT...")
+            for (target in targets) {
+                try {
+                    socket.send(DatagramPacket(probe, probe.size, target, DISCOVERY_PORT))
+                } catch (ignored: Exception) {}
+            }
 
             val startTime = System.currentTimeMillis()
             val buf = ByteArray(2048)
@@ -79,7 +148,7 @@ object PeerDiscoveryManager {
                     socket.receive(recvPacket)
 
                     val senderIp = recvPacket.address.hostAddress ?: continue
-                    if (senderIp == localIp || senderIp == "127.0.0.1") continue
+                    if (localIps.contains(senderIp)) continue
 
                     val text = String(recvPacket.data, 0, recvPacket.length, Charsets.UTF_8)
                     val json = JSONObject(text)
@@ -101,10 +170,37 @@ object PeerDiscoveryManager {
                     }
                 } catch (e: SocketTimeoutException) {
                     if (System.currentTimeMillis() - startTime < timeoutMs / 2) {
-                        try { socket.send(packet) } catch (ignored: Exception) {}
+                        for (target in targets) {
+                            try {
+                                socket.send(DatagramPacket(probe, probe.size, target, DISCOVERY_PORT))
+                            } catch (ignored: Exception) {}
+                        }
                     }
                 } catch (e: Exception) {
                     break
+                }
+            }
+
+            // Direct fallback: check target or saved Desktop IP via HTTP if not already discovered via UDP
+            val candidateIp = targetIp?.trim()?.takeIf { it.isNotBlank() && it != "0.0.0.0" }
+                ?: prefs.desktopIp.trim().takeIf { it.isNotBlank() && it != "0.0.0.0" }
+            val candidatePort = if (targetIp?.isNotBlank() == true) targetPort else prefs.desktopPort
+
+            if (candidateIp != null && seenAddresses.none { it.startsWith("$candidateIp:") }) {
+                try {
+                    val client = com.aruncs.musicsync.client.DesktopApiClient()
+                    val res = client.ping(candidateIp, candidatePort)
+                    val hostname = res.optString("hostname", "Desktop")
+                    val key = "$candidateIp:$candidatePort"
+                    if (!seenAddresses.contains(key)) {
+                        seenAddresses.add(key)
+                        val peer = DiscoveredPeer(candidateIp, candidatePort, hostname, "desktop")
+                        peerList.add(peer)
+                        onLog?.invoke("[DISCOVERY] Discovered desktop '$hostname' at $candidateIp:$candidatePort (direct HTTP)")
+                        onPeerFound?.invoke(peer)
+                    }
+                } catch (e: Exception) {
+                    onLog?.invoke("[DISCOVERY] Direct HTTP check to $candidateIp failed: ${e.message}")
                 }
             }
         } catch (e: Exception) {
@@ -157,7 +253,7 @@ object PeerDiscoveryManager {
         try {
             socket = DatagramSocket().apply {
                 broadcast = true
-                soTimeout = 800 // probe read chunk
+                soTimeout = 800
             }
 
             val prefs = AppPreferences(context)
@@ -171,11 +267,13 @@ object PeerDiscoveryManager {
                 put("port", prefs.serverPort)
             }.toString().toByteArray(Charsets.UTF_8)
 
-            val broadcastAddr = InetAddress.getByName("255.255.255.255")
-            val packet = DatagramPacket(probe, probe.size, broadcastAddr, DISCOVERY_PORT)
-
-            onLog?.invoke("[DISCOVERY] Broadcasting UDP probe on port $DISCOVERY_PORT...")
-            socket.send(packet)
+            val targets = getBroadcastTargets(context)
+            onLog?.invoke("[DISCOVERY] Broadcasting UDP probe to ${targets.size} destination(s) on port $DISCOVERY_PORT...")
+            for (target in targets) {
+                try {
+                    socket.send(DatagramPacket(probe, probe.size, target, DISCOVERY_PORT))
+                } catch (ignored: Exception) {}
+            }
 
             val startTime = System.currentTimeMillis()
             val buf = ByteArray(2048)
@@ -199,12 +297,31 @@ object PeerDiscoveryManager {
                         break
                     }
                 } catch (e: SocketTimeoutException) {
-                    // Send second probe after timeout if half time elapsed
                     if (System.currentTimeMillis() - startTime < timeoutMs / 2) {
-                        try { socket.send(packet) } catch (ignored: Exception) {}
+                        for (target in targets) {
+                            try {
+                                socket.send(DatagramPacket(probe, probe.size, target, DISCOVERY_PORT))
+                            } catch (ignored: Exception) {}
+                        }
                     }
                 } catch (e: Exception) {
                     break
+                }
+            }
+
+            // Direct HTTP fallback if not found via UDP broadcast
+            if (!found) {
+                val savedIp = prefs.desktopIp.trim()
+                val savedPort = prefs.desktopPort
+                if (savedIp.isNotBlank() && savedIp != "0.0.0.0") {
+                    try {
+                        val client = com.aruncs.musicsync.client.DesktopApiClient()
+                        val res = client.ping(savedIp, savedPort)
+                        val hostname = res.optString("hostname", "Desktop")
+                        onLog?.invoke("[DISCOVERY] Discovered Desktop '$hostname' at $savedIp:$savedPort (direct HTTP)")
+                        onFound(savedIp, savedPort, hostname)
+                        found = true
+                    } catch (ignored: Exception) {}
                 }
             }
         } catch (e: Exception) {
@@ -219,7 +336,6 @@ object PeerDiscoveryManager {
 
     suspend fun discoverDesktopOnSubnet(
         context: Context,
-        port: Int = 5000,
         timeoutMs: Long = 3000
     ): String? = withContext(Dispatchers.IO) {
         var foundHost: String? = null
@@ -253,9 +369,12 @@ object PeerDiscoveryManager {
                     put("port", prefs.serverPort)
                 }.toString().toByteArray(Charsets.UTF_8)
 
-                val broadcastAddr = InetAddress.getByName("255.255.255.255")
-                val packet = DatagramPacket(announce, announce.size, broadcastAddr, DISCOVERY_PORT)
-                socket.send(packet)
+                val targets = getBroadcastTargets(context)
+                for (target in targets) {
+                    try {
+                        socket.send(DatagramPacket(announce, announce.size, target, DISCOVERY_PORT))
+                    } catch (ignored: Exception) {}
+                }
                 socket.close()
 
                 onLog?.invoke("[DISCOVERY] Announced Android device '$model' to local network on port $DISCOVERY_PORT")
@@ -318,7 +437,9 @@ object PeerDiscoveryManager {
             } catch (e: Exception) {
                 onLog?.invoke("[DISCOVERY] Could not bind listener on port $DISCOVERY_PORT: ${e.message}")
             } finally {
-                try { socket?.close() } catch (ignored: Exception) {}
+                try { socket?.close() } catch (ignored: Exception) {
+                    onLog?.invoke("[Exception] $ignored")
+                }
                 releaseMulticastLock()
             }
         }.apply {
