@@ -4,7 +4,9 @@ import android.media.AudioAttributes
 import android.media.MediaPlayer
 import android.os.Handler
 import android.os.Looper
+import com.aruncs.musicsync.MusicSyncApplication
 import com.aruncs.musicsync.data.CrashLogger
+import com.aruncs.musicsync.data.MediaStoreHelper
 import com.aruncs.musicsync.model.Song
 import java.io.File
 import java.util.Collections
@@ -87,6 +89,8 @@ class AudioPlayer {
     var onQueueChanged: ((queue: List<PlayableItem>, currentIndex: Int) -> Unit)? = null
     var onModeChanged: ((isShuffled: Boolean, repeatMode: RepeatMode) -> Unit)? = null
     var onError: ((String) -> Unit)? = null
+    var onResolveLocalPath: ((Song) -> File?)? = null
+    var onResolveRemoteStream: ((Song) -> String?)? = null
 
     fun play(song: Song, streamUrl: String? = null) {
         val item = PlayableItem(song, streamUrl)
@@ -278,43 +282,70 @@ class AudioPlayer {
     }
 
     private fun playItem(item: PlayableItem) {
-        val song = item.song
-        val streamUrl = item.streamUrl
-        val isRemote = streamUrl != null
+        var activeItem = item
+        var song = activeItem.song
+        var streamUrl = activeItem.streamUrl
+        var isRemote = !streamUrl.isNullOrBlank()
 
-        var file = if (!isRemote) File(song.filepath) else null
-        if (!isRemote && (file == null || !file.exists() || !file.isFile)) {
-            val context = CrashLogger.appContext
-            val fallbackFile = if (context != null) {
+        // 1. Resolve Local Path if available
+        var file: File? = if (!isRemote && song.filepath.isNotBlank()) File(song.filepath) else null
+        if (!isRemote && (file == null || !file.exists() || !file.isFile || !file.canRead())) {
+            val ctx = CrashLogger.appContext
+            val resolvedFile = if (ctx != null) {
                 try {
-                    val musicDir = com.aruncs.musicsync.data.AppPreferences(context).musicStorageDirectory
-                    val cand1 = File(musicDir, song.filename)
-                    val cand2 = File(File(musicDir, "ADB"), song.filename)
-                    when {
-                        cand1.exists() && cand1.isFile -> cand1
-                        cand2.exists() && cand2.isFile -> cand2
-                        else -> null
-                    }
-                } catch (ignored: Throwable) {
+                    onResolveLocalPath?.invoke(song)
+                        ?: MediaStoreHelper.findLocalMatchingSong(ctx, song)
+                } catch (e: Exception) {
+                    CrashLogger.logPlayerError("AudioPlayer", "Error during local path resolution for '${song.title}': ${e.message}", e)
                     null
                 }
             } else null
 
-            if (fallbackFile != null) {
-                file = fallbackFile
+            if (resolvedFile != null && resolvedFile.exists() && resolvedFile.isFile && resolvedFile.canRead()) {
+                file = resolvedFile
+                song = song.copy(filepath = resolvedFile.absolutePath)
+                activeItem = PlayableItem(song, streamUrl = null)
+                CrashLogger.logPlayerError("AudioPlayer", "[RESOLVE-LOCAL] Resolved local file for '${song.title}': ${resolvedFile.absolutePath}")
             } else {
-                val err = "File not found on device: ${song.filepath}"
-                CrashLogger.logPlayerError("AudioPlayer", err)
-                onError?.invoke(err)
-                consecutiveErrors++
-                if (consecutiveErrors < MAX_CONSECUTIVE_ERRORS && hasNext) {
-                    handler.post { playNext() }
-                } else if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-                    stop()
-                }
-                return
+                file = null
             }
         }
+
+        // 2. If not available locally, resort to connected peer devices
+        if (!isRemote && file == null) {
+            CrashLogger.logPlayerError("AudioPlayer", "[RESOLVE-SEARCH] File not found locally for '${song.title}' (${song.filepath}). Checking connected devices...")
+            val resolvedStream = try {
+                onResolveRemoteStream?.invoke(song)
+            } catch (e: Exception) {
+                CrashLogger.logPlayerError("AudioPlayer", "Error during remote stream resolution for '${song.title}': ${e.message}", e)
+                null
+            }
+
+            if (!resolvedStream.isNullOrBlank()) {
+                activeItem = PlayableItem(song, streamUrl = resolvedStream)
+                streamUrl = resolvedStream
+                isRemote = true
+                CrashLogger.logPlayerError("AudioPlayer", "[RESOLVE-REMOTE] Resolved stream URL for '${song.title}': $resolvedStream")
+            }
+        }
+
+        // 3. Handle resolution failure
+        if (!isRemote && file == null) {
+            val err = "File not found locally or on any connected device: ${song.title}"
+            CrashLogger.logPlayerError("AudioPlayer", err)
+            onError?.invoke(err)
+            consecutiveErrors++
+            if (consecutiveErrors < MAX_CONSECUTIVE_ERRORS && hasNext) {
+                handler.post { playNext() }
+            } else if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+                stop()
+            }
+            return
+        }
+
+        currentSong = song
+        CrashLogger.currentPlayingSong = song
+        onTrackChanged?.invoke(song)
 
         stopProgressUpdates()
 
