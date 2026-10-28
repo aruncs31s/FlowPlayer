@@ -6,6 +6,7 @@ import android.net.Uri
 import android.provider.MediaStore
 import com.aruncs.musicsync.model.Song
 import java.io.File
+import java.util.Locale
 
 object MediaStoreHelper {
 
@@ -206,5 +207,73 @@ object MediaStoreHelper {
         MediaScannerHelper.scanFile(context, song.filepath)
         invalidateCache()
         return fileDeleted
+    }
+
+    fun findLocalMatchingSong(context: Context, targetSong: Song): File? {
+        try {
+            // 1. Direct path check
+            if (targetSong.filepath.isNotBlank()) {
+                val directFile = File(targetSong.filepath)
+                if (directFile.exists() && directFile.isFile && directFile.canRead()) {
+                    return directFile
+                }
+            }
+
+            val filenameClean = targetSong.filename.trim().lowercase(Locale.US)
+            val titleClean = targetSong.title.trim().lowercase(Locale.US)
+            val artistClean = targetSong.artist.trim().lowercase(Locale.US)
+
+            // 2. Search MediaStore songs for matching filename, title, or title+artist
+            val allSongs = getAllDeviceSongs(context)
+
+            // 2a. Match by exact filename
+            if (filenameClean.isNotBlank()) {
+                val matchByFilename = allSongs.firstOrNull { s ->
+                    s.filename.trim().lowercase(Locale.US) == filenameClean ||
+                    File(s.filepath).name.trim().lowercase(Locale.US) == filenameClean
+                }
+                if (matchByFilename != null) {
+                    val f = File(matchByFilename.filepath)
+                    if (f.exists() && f.isFile) return f
+                }
+            }
+
+            // 2b. Match by title + artist
+            if (titleClean.isNotBlank()) {
+                val matchByTitleArtist = allSongs.firstOrNull { s ->
+                    val sTitle = s.title.trim().lowercase(Locale.US)
+                    val sArtist = s.artist.trim().lowercase(Locale.US)
+                    (sTitle == titleClean && (artistClean.isBlank() || sArtist == artistClean || sArtist.contains(artistClean) || artistClean.contains(sArtist)))
+                }
+                if (matchByTitleArtist != null) {
+                    val f = File(matchByTitleArtist.filepath)
+                    if (f.exists() && f.isFile) return f
+                }
+            }
+
+            // 3. Recursive directory scan fallback in AppPreferences musicStorageDirectory
+            val musicDir = AppPreferences(context).musicStorageDirectory
+            if (filenameClean.isNotBlank()) {
+                val found = searchDirectoryRecursive(musicDir, targetSong.filename, maxDepth = 3)
+                if (found != null && found.exists() && found.isFile) return found
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return null
+    }
+
+    private fun searchDirectoryRecursive(dir: File, targetFilename: String, maxDepth: Int): File? {
+        if (!dir.exists() || !dir.isDirectory || maxDepth <= 0) return null
+        val files = dir.listFiles() ?: return null
+        for (f in files) {
+            if (f.isFile && f.name.equals(targetFilename, ignoreCase = true)) {
+                return f
+            } else if (f.isDirectory && !f.name.startsWith(".")) {
+                val sub = searchDirectoryRecursive(f, targetFilename, maxDepth - 1)
+                if (sub != null) return sub
+            }
+        }
+        return null
     }
 }
